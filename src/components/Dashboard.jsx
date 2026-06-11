@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 import { 
-  ResponsiveContainer, 
   LineChart, 
   Line, 
   XAxis, 
@@ -34,7 +33,8 @@ import { getDashboardAnalytics } from '../services/expenseService';
 
 function ChartSurface({ minHeight, children }) {
   const containerRef = useRef(null);
-  const [isReady, setIsReady] = useState(false);
+  const frameRef = useRef(null);
+  const [size, setSize] = useState({ width: 0, height: minHeight });
 
   useEffect(() => {
     const element = containerRef.current;
@@ -42,25 +42,45 @@ function ChartSurface({ minHeight, children }) {
       return undefined;
     }
 
-    const updateReadyState = () => {
+    const updateSize = () => {
       const { width, height } = element.getBoundingClientRect();
-      setIsReady(width > 0 && height > 0);
+      if (frameRef.current) {
+        cancelAnimationFrame(frameRef.current);
+      }
+
+      frameRef.current = requestAnimationFrame(() => {
+        const nextWidth = Math.round(width);
+        const nextHeight = Math.round(height);
+
+        setSize((current) => {
+          if (current.width === nextWidth && current.height === nextHeight) {
+            return current;
+          }
+
+          return { width: nextWidth, height: nextHeight };
+        });
+      });
     };
 
-    updateReadyState();
+    updateSize();
 
     const observer = new ResizeObserver(() => {
-      updateReadyState();
+      updateSize();
     });
 
     observer.observe(element);
 
-    return () => observer.disconnect();
-  }, []);
+    return () => {
+      observer.disconnect();
+      if (frameRef.current) {
+        cancelAnimationFrame(frameRef.current);
+      }
+    };
+  }, [minHeight]);
 
   return (
     <div ref={containerRef} style={{ width: '100%', height: `${minHeight}px`, minWidth: 0, minHeight: `${minHeight}px` }}>
-      {isReady ? children : null}
+      {size.width > 0 && size.height > 0 ? children(size) : null}
     </div>
   );
 }
@@ -329,8 +349,8 @@ function Dashboard({ showToast }) {
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <h3 style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Monthly Spend Trend</h3>
           <ChartSurface minHeight={240}>
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={charts.monthlyTrend} margin={{ top: 10, right: 10, left: 10, bottom: 0 }} key={currentTheme}>
+            {({ width, height }) => (
+              <LineChart width={width} height={height} data={charts.monthlyTrend} margin={{ top: 10, right: 10, left: 10, bottom: 0 }} key={currentTheme}>
                 <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} />
                 <XAxis dataKey="month" stroke={chartTheme.textMuted} fontSize={11} tickLine={false} />
                 <YAxis stroke={chartTheme.textMuted} fontSize={11} tickLine={false} axisLine={false} tickFormatter={v => `₹${v/1000}k`} />
@@ -342,7 +362,7 @@ function Dashboard({ showToast }) {
                 />
                 <Line type="monotone" dataKey="spend" stroke={chartTheme.primary} strokeWidth={2} activeDot={{ r: 6 }} dot={{ r: 3 }} />
               </LineChart>
-            </ResponsiveContainer>
+            )}
           </ChartSurface>
         </div>
 
@@ -350,8 +370,8 @@ function Dashboard({ showToast }) {
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <h3 style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Category-wise Spend Split</h3>
           <ChartSurface minHeight={240}>
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart key={currentTheme}>
+            {({ width, height }) => (
+              <PieChart width={width} height={height} key={currentTheme}>
                 <Pie
                   data={charts.categoryBreakdown}
                   cx="50%"
@@ -372,7 +392,7 @@ function Dashboard({ showToast }) {
                 />
                 <Legend layout="horizontal" align="center" verticalAlign="bottom" iconSize={8} iconType="circle" wrapperStyle={{ fontSize: 10, color: 'var(--text)' }} />
               </PieChart>
-            </ResponsiveContainer>
+            )}
           </ChartSurface>
         </div>
 
@@ -380,8 +400,8 @@ function Dashboard({ showToast }) {
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <h3 style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Department-wise Spend</h3>
           <ChartSurface minHeight={240}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={charts.departmentSpend} margin={{ top: 10, right: 10, left: 10, bottom: 0 }} key={currentTheme}>
+            {({ width, height }) => (
+              <BarChart width={width} height={height} data={charts.departmentSpend} margin={{ top: 10, right: 10, left: 10, bottom: 0 }} key={currentTheme}>
                 <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} vertical={false} />
                 <XAxis dataKey="department" stroke={chartTheme.textMuted} fontSize={11} tickLine={false} />
                 <YAxis stroke={chartTheme.textMuted} fontSize={11} tickLine={false} axisLine={false} tickFormatter={v => `₹${v/1000}k`} />
@@ -395,7 +415,7 @@ function Dashboard({ showToast }) {
                   ))}
                 </Bar>
               </BarChart>
-            </ResponsiveContainer>
+            )}
           </ChartSurface>
         </div>
 
@@ -403,8 +423,8 @@ function Dashboard({ showToast }) {
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <h3 style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Weekly Expense Distribution</h3>
           <ChartSurface minHeight={240}>
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={charts.weeklySpend} margin={{ top: 10, right: 10, left: 10, bottom: 0 }} key={currentTheme}>
+            {({ width, height }) => (
+              <AreaChart width={width} height={height} data={charts.weeklySpend} margin={{ top: 10, right: 10, left: 10, bottom: 0 }} key={currentTheme}>
                 <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} />
                 <XAxis dataKey="day" stroke={chartTheme.textMuted} fontSize={11} tickLine={false} />
                 <YAxis stroke={chartTheme.textMuted} fontSize={11} tickLine={false} axisLine={false} tickFormatter={v => `₹${v/1000}k`} />
@@ -414,7 +434,7 @@ function Dashboard({ showToast }) {
                 />
                 <Area type="monotone" dataKey="spend" stroke={chartTheme.secondary} fill={chartTheme.secondary} fillOpacity={0.15} strokeWidth={2} />
               </AreaChart>
-            </ResponsiveContainer>
+            )}
           </ChartSurface>
         </div>
 
@@ -422,8 +442,10 @@ function Dashboard({ showToast }) {
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <h3 style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Top Spending Subcategories</h3>
           <ChartSurface minHeight={240}>
-            <ResponsiveContainer width="100%" height="100%">
+            {({ width, height }) => (
               <BarChart 
+                width={width}
+                height={height}
                 data={charts.topSubCategories} 
                 layout="vertical"
                 margin={{ top: 10, right: 10, left: 20, bottom: 10 }} 
@@ -438,7 +460,7 @@ function Dashboard({ showToast }) {
                 />
                 <Bar dataKey="spend" fill={chartTheme.primary} radius={[0, 4, 4, 0]} barSize={15} />
               </BarChart>
-            </ResponsiveContainer>
+            )}
           </ChartSurface>
         </div>
 
@@ -446,8 +468,8 @@ function Dashboard({ showToast }) {
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <h3 style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Payment Mode Analysis</h3>
           <ChartSurface minHeight={240}>
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart key={currentTheme}>
+            {({ width, height }) => (
+              <PieChart width={width} height={height} key={currentTheme}>
                 <Pie
                   data={charts.paymentModeAnalysis}
                   cx="50%"
@@ -466,7 +488,7 @@ function Dashboard({ showToast }) {
                 />
                 <Legend layout="horizontal" align="center" verticalAlign="bottom" iconSize={8} wrapperStyle={{ fontSize: 10 }} />
               </PieChart>
-            </ResponsiveContainer>
+            )}
           </ChartSurface>
         </div>
 
@@ -495,8 +517,8 @@ function Dashboard({ showToast }) {
             </span>
           </div>
           <ChartSurface minHeight={380}>
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={charts.spendingForecast} margin={{ top: 12, right: 18, left: 12, bottom: 8 }} key={currentTheme}>
+            {({ width, height }) => (
+              <AreaChart width={width} height={height} data={charts.spendingForecast} margin={{ top: 12, right: 18, left: 12, bottom: 8 }} key={currentTheme}>
                 <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} />
                 <XAxis dataKey="month" stroke={chartTheme.textMuted} fontSize={11} tickLine={false} />
                 <YAxis stroke={chartTheme.textMuted} fontSize={11} tickLine={false} axisLine={false} tickFormatter={v => `₹${v/1000}k`} />
@@ -535,7 +557,7 @@ function Dashboard({ showToast }) {
                   strokeDasharray="6 4"
                 />
               </AreaChart>
-            </ResponsiveContainer>
+            )}
           </ChartSurface>
         </div>
       </div>
