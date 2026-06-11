@@ -9,16 +9,16 @@ const port = Number(process.env.PORT || 4000);
 const mongoUri = process.env.MONGO_URI;
 const dbName = process.env.MONGO_DB_NAME || 'i-ams';
 const categoryDocumentKey = 'expense-categories';
+const isVercel = Boolean(process.env.VERCEL);
 
-if (!mongoUri) {
-  throw new Error('Missing MONGO_URI in environment.');
-}
-
-const client = new MongoClient(mongoUri, {
-  dbName,
-});
+const client = mongoUri
+  ? new MongoClient(mongoUri, {
+      dbName,
+    })
+  : null;
 
 let database;
+let databaseInitPromise;
 
 const sanitizeExpense = (expense) => {
   const sanitized = {
@@ -73,6 +73,31 @@ const normalizeCategories = (categories) =>
 
 const getExpensesCollection = () => database.collection('expenses');
 const getCategoriesCollection = () => database.collection('settings');
+
+const initializeDatabase = async () => {
+  if (database) {
+    return database;
+  }
+
+  if (!mongoUri || !client) {
+    throw new Error('Missing MONGO_URI in environment.');
+  }
+
+  if (!databaseInitPromise) {
+    databaseInitPromise = (async () => {
+      await client.connect();
+      database = client.db(dbName);
+      await getExpensesCollection().createIndex({ expenseId: 1 }, { unique: true });
+      await getCategoriesDocument();
+      return database;
+    })().catch((error) => {
+      databaseInitPromise = undefined;
+      throw error;
+    });
+  }
+
+  return databaseInitPromise;
+};
 
 const getCategoriesDocument = async () => {
   const collection = getCategoriesCollection();
@@ -137,6 +162,15 @@ const getNextExpenseId = async (dateValue) => {
 
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
+
+app.use('/api', async (_request, _response, next) => {
+  try {
+    await initializeDatabase();
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
 
 app.get('/api/health', async (_request, response) => {
   response.json({ ok: true, database: dbName });
@@ -306,17 +340,17 @@ app.use((error, _request, response, _next) => {
 });
 
 const start = async () => {
-  await client.connect();
-  database = client.db(dbName);
-  await getExpensesCollection().createIndex({ expenseId: 1 }, { unique: true });
-  await getCategoriesDocument();
-
+  await initializeDatabase();
   app.listen(port, () => {
     console.log(`Mongo API listening on http://localhost:${port} using database "${dbName}"`);
   });
 };
 
-start().catch((error) => {
-  console.error('Failed to start Mongo API:', error);
-  process.exit(1);
-});
+if (!isVercel) {
+  start().catch((error) => {
+    console.error('Failed to start Mongo API:', error);
+    process.exit(1);
+  });
+}
+
+export default app;
