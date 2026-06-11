@@ -36,9 +36,7 @@ export const initializeExpenseCategories = async () => {
     window.localStorage.removeItem(CATEGORY_STORAGE_KEY);
   }
 
-  const categories = await apiRequest('/categories/init', {
-    method: 'POST',
-  });
+  const categories = await apiRequest('/categories');
   return writeCategoryCache(categories);
 };
 
