@@ -1,0 +1,1257 @@
+import { useState, useEffect, useRef } from 'react';
+import { 
+  Plus, 
+  Search, 
+  Trash2, 
+  Edit3, 
+  Eye, 
+  Download, 
+  Upload,
+  X, 
+  Calendar, 
+  IndianRupee, 
+  Briefcase, 
+  Layers, 
+  ChevronLeft, 
+  ChevronRight,
+  TrendingUp,
+  FileText,
+  AlertCircle,
+  Activity,
+  Award
+} from 'lucide-react';
+import * as XLSX from 'xlsx';
+import { initializeDB, getExpenses, saveExpense, saveExpensesBulk, deleteExpense, deleteExpensesByImportBatch } from '../services/expenseService';
+import { DEPARTMENTS, PAYMENT_MODES } from '../services/categories';
+
+function ExpenseTracker({ categories, showToast }) {
+  // Database state
+  const [expenses, setExpenses] = useState([]);
+  
+  // Filter states
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterCategory, setFilterCategory] = useState('');
+  const [filterSubCategory, setFilterSubCategory] = useState('');
+  const [filterDept, setFilterDept] = useState('');
+  const [filterMinAmount, setFilterMinAmount] = useState('');
+  const [filterMaxAmount, setFilterMaxAmount] = useState('');
+  const [filterStartDate, setFilterStartDate] = useState('');
+  const [filterEndDate, setFilterEndDate] = useState('');
+  
+  // Sorting state
+  const [sortField, setSortField] = useState('date');
+  const [sortDirection, setSortDirection] = useState('desc');
+
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+
+  // Modal states
+  const [formModalOpen, setFormModalOpen] = useState(false);
+  const [detailsModalOpen, setDetailsModalOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  
+  // Active selected items for modals
+  const [selectedExpense, setSelectedExpense] = useState(null);
+  const importInputRef = useRef(null);
+  const exportMenuRef = useRef(null);
+  const [formData, setFormData] = useState({
+    expenseId: '',
+    date: '',
+    category: '',
+    subCategory: '',
+    amount: '',
+    paymentMode: 'Card',
+    vendorName: '',
+    department: 'Engineering',
+    employeeName: '',
+    description: '',
+    attachment: ''
+  });
+
+  // Load expenses on mount
+  useEffect(() => {
+    void refreshExpenses();
+  }, []);
+
+  useEffect(() => {
+    const handlePointerDown = (event) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target)) {
+        setExportMenuOpen(false);
+      }
+    };
+
+    window.addEventListener('pointerdown', handlePointerDown);
+    return () => window.removeEventListener('pointerdown', handlePointerDown);
+  }, []);
+
+  const availableCategories = Object.keys(categories);
+
+  useEffect(() => {
+    if (filterCategory && !categories[filterCategory]) {
+      setFilterCategory('');
+      setFilterSubCategory('');
+    } else if (filterSubCategory && filterCategory && !categories[filterCategory]?.includes(filterSubCategory)) {
+      setFilterSubCategory('');
+    }
+
+    setFormData((prev) => {
+      if (!availableCategories.length) {
+        return {
+          ...prev,
+          category: '',
+          subCategory: ''
+        };
+      }
+
+      if (!prev.category || !categories[prev.category]) {
+        const nextCategory = availableCategories[0];
+        return {
+          ...prev,
+          category: nextCategory,
+          subCategory: categories[nextCategory]?.[0] || ''
+        };
+      }
+
+      if (prev.subCategory && categories[prev.category]?.includes(prev.subCategory)) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        subCategory: categories[prev.category]?.[0] || ''
+      };
+    });
+  }, [categories, filterCategory, filterSubCategory]);
+
+  const refreshExpenses = async () => {
+    await initializeDB();
+    setExpenses(getExpenses());
+  };
+
+  // Reset pagination when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [
+    searchTerm, filterCategory, filterSubCategory, filterDept, 
+    filterMinAmount, filterMaxAmount, filterStartDate, filterEndDate
+  ]);
+
+  // Handle Sort Click
+  const handleSort = (field) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  // Clear all filters
+  const handleClearFilters = () => {
+    setSearchTerm('');
+    setFilterCategory('');
+    setFilterSubCategory('');
+    setFilterDept('');
+    setFilterMinAmount('');
+    setFilterMaxAmount('');
+    setFilterStartDate('');
+    setFilterEndDate('');
+    showToast("All filters cleared", "success");
+  };
+
+  // Dynamic filter processing
+  const getFilteredExpenses = () => {
+    return expenses.filter(item => {
+      // Search term (Matches Name, ID, Vendor, Description)
+      const term = searchTerm.toLowerCase().trim();
+      if (term) {
+        const matchesId = item.expenseId.toLowerCase().includes(term);
+        const matchesEmployee = item.employeeName.toLowerCase().includes(term);
+        const matchesVendor = item.vendorName.toLowerCase().includes(term);
+        const matchesDesc = item.description.toLowerCase().includes(term);
+        if (!matchesId && !matchesEmployee && !matchesVendor && !matchesDesc) {
+          return false;
+        }
+      }
+
+      // Categories
+      if (filterCategory && item.category !== filterCategory) return false;
+      if (filterSubCategory && item.subCategory !== filterSubCategory) return false;
+
+      // Department
+      if (filterDept && item.department !== filterDept) return false;
+
+      // Amount Range
+      if (filterMinAmount && item.amount < parseFloat(filterMinAmount)) return false;
+      if (filterMaxAmount && item.amount > parseFloat(filterMaxAmount)) return false;
+
+      // Date Range
+      if (filterStartDate && new Date(item.date) < new Date(filterStartDate)) return false;
+      if (filterEndDate && new Date(item.date) > new Date(filterEndDate)) return false;
+
+      return true;
+    });
+  };
+
+  // Dynamic sorting processing
+  const getSortedExpenses = (filteredList) => {
+    return [...filteredList].sort((a, b) => {
+      let aVal = a[sortField];
+      let bVal = b[sortField];
+
+      if (sortField === 'date') {
+        aVal = new Date(aVal).getTime();
+        bVal = new Date(bVal).getTime();
+      }
+      
+      if (sortField === 'amount') {
+        aVal = parseFloat(aVal) || 0;
+        bVal = parseFloat(bVal) || 0;
+      }
+
+      if (typeof aVal === 'string') {
+        aVal = aVal.toLowerCase();
+        bVal = bVal.toLowerCase();
+      }
+
+      if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+  };
+
+  const filteredItems = getFilteredExpenses();
+  const sortedItems = getSortedExpenses(filteredItems);
+
+  // Pagination Math
+  const totalItems = sortedItems.length;
+  const totalPages = Math.ceil(totalItems / rowsPerPage);
+  const indexOfLastRow = currentPage * rowsPerPage;
+  const indexOfFirstRow = indexOfLastRow - rowsPerPage;
+  const currentRows = sortedItems.slice(indexOfFirstRow, indexOfLastRow);
+
+  // Filtered Summary Cards calculations (Simplified)
+  const summaryTotalAmount = filteredItems.reduce((sum, e) => sum + e.amount, 0);
+  const summaryCount = filteredItems.length;
+  const summaryAvgAmount = summaryCount > 0 ? summaryTotalAmount / summaryCount : 0;
+  const summaryMaxAmount = summaryCount > 0 ? filteredItems.reduce((max, e) => Math.max(max, e.amount), 0) : 0;
+  const importedBatches = Object.values(
+    expenses.reduce((acc, expense) => {
+      if (!expense.importBatchId) {
+        return acc;
+      }
+
+      if (!acc[expense.importBatchId]) {
+        acc[expense.importBatchId] = {
+          importBatchId: expense.importBatchId,
+          importFileName: expense.importFileName || 'Imported file',
+          importedAt: expense.importedAt || '',
+          count: 0
+        };
+      }
+
+      acc[expense.importBatchId].count += 1;
+      return acc;
+    }, {})
+  ).sort((a, b) => new Date(b.importedAt || 0) - new Date(a.importedAt || 0));
+
+  // Open Form Modal (Add)
+  const handleAddClick = () => {
+    if (!availableCategories.length) {
+      showToast("Create a category before adding an expense", "warning");
+      return;
+    }
+
+    const firstCategory = availableCategories[0] || '';
+    setFormData({
+      expenseId: '',
+      date: new Date().toISOString().split('T')[0],
+      category: firstCategory,
+      subCategory: categories[firstCategory]?.[0] || '',
+      amount: '',
+      paymentMode: PAYMENT_MODES[0],
+      vendorName: '',
+      department: DEPARTMENTS[0],
+      employeeName: '',
+      description: '',
+      attachment: ''
+    });
+    setSelectedExpense(null);
+    setFormModalOpen(true);
+  };
+
+  // Open Form Modal (Edit)
+  const handleEditClick = (expense, e) => {
+    e.stopPropagation();
+    setFormData({
+      expenseId: expense.expenseId,
+      date: expense.date,
+      category: expense.category,
+      subCategory: expense.subCategory,
+      amount: expense.amount,
+      paymentMode: expense.paymentMode,
+      vendorName: expense.vendorName,
+      department: expense.department,
+      employeeName: expense.employeeName,
+      description: expense.description,
+      attachment: expense.attachment || ''
+    });
+    setSelectedExpense(expense);
+    setFormModalOpen(true);
+  };
+
+  // Open Details Modal
+  const handleViewClick = (expense) => {
+    setSelectedExpense(expense);
+    setDetailsModalOpen(true);
+  };
+
+  // Delete Click handler
+  const handleDeleteClick = (expense, e) => {
+    e.stopPropagation();
+    setSelectedExpense(expense);
+    setDeleteConfirmOpen(true);
+  };
+
+  // Delete confirm action
+  const confirmDelete = async () => {
+    if (selectedExpense) {
+      await deleteExpense(selectedExpense.expenseId);
+      await refreshExpenses();
+      setDeleteConfirmOpen(false);
+      setSelectedExpense(null);
+      showToast("Expense record deleted successfully", "success");
+    }
+  };
+
+  // Form Field change
+  const handleFormChange = (e) => {
+    const { name, value } = e.target;
+    
+    if (name === 'category') {
+      const subcats = categories[value] || [];
+      setFormData(prev => ({
+        ...prev,
+        category: value,
+        subCategory: subcats[0] || ''
+      }));
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        [name]: value
+      }));
+    }
+  };
+
+  const handleAttachmentChange = (e) => {
+    const file = e.target.files?.[0];
+
+    if (!file) {
+      setFormData((prev) => ({
+        ...prev,
+        attachment: ''
+      }));
+      return;
+    }
+
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+    if (!isPdf) {
+      showToast("Only PDF invoice files are supported", "warning");
+      e.target.value = '';
+      return;
+    }
+
+    setFormData((prev) => ({
+      ...prev,
+      attachment: file.name
+    }));
+  };
+
+  // Form Submit handler
+  const handleFormSubmit = async (e) => {
+    e.preventDefault();
+
+    if (!availableCategories.length) {
+      showToast("Add at least one category before creating expenses", "warning");
+      return;
+    }
+    
+    if (parseFloat(formData.amount) <= 0 || isNaN(parseFloat(formData.amount))) {
+      showToast("Amount must be a positive number", "warning");
+      return;
+    }
+
+    if (!formData.employeeName.trim()) {
+      showToast("Employee Name is required", "warning");
+      return;
+    }
+
+    if (!formData.vendorName.trim()) {
+      showToast("Vendor Name is required", "warning");
+      return;
+    }
+
+    const payload = {
+      ...formData,
+      amount: parseFloat(formData.amount)
+    };
+
+    await saveExpense(payload);
+    await refreshExpenses();
+    setFormModalOpen(false);
+    
+    const isEdit = !!formData.expenseId;
+    showToast(
+      isEdit 
+        ? `Expense ${formData.expenseId} updated successfully` 
+        : "New expense record added successfully",
+      "success"
+    );
+  };
+
+  const getExportRows = () => {
+    return filteredItems.map((expense) => ({
+      'Expense ID': expense.expenseId,
+      Date: expense.date,
+      Category: expense.category,
+      'Sub-Category': expense.subCategory,
+      Amount: expense.amount,
+      'Payment Mode': expense.paymentMode,
+      'Vendor Name': expense.vendorName,
+      Department: expense.department,
+      'Employee Name': expense.employeeName,
+      Description: expense.description,
+      Attachment: expense.attachment || ''
+    }));
+  };
+
+  const downloadBlob = (blob, fileName) => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // Export Filtered items to CSV
+  const handleExportCSV = () => {
+    if (filteredItems.length === 0) {
+      showToast("No data available to export", "warning");
+      return;
+    }
+
+    const worksheet = XLSX.utils.json_to_sheet(getExportRows());
+    const csvContent = XLSX.utils.sheet_to_csv(worksheet);
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    downloadBlob(blob, `iams_expenses_export_${new Date().toISOString().split('T')[0]}.csv`);
+    setExportMenuOpen(false);
+    showToast("Downloaded CSV report successfully", "success");
+  };
+
+  const handleExportXLSX = () => {
+    if (filteredItems.length === 0) {
+      showToast("No data available to export", "warning");
+      return;
+    }
+
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.json_to_sheet(getExportRows());
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Expenses');
+    XLSX.writeFile(workbook, `iams_expenses_export_${new Date().toISOString().split('T')[0]}.xlsx`);
+    setExportMenuOpen(false);
+    showToast("Downloaded XLSX report successfully", "success");
+  };
+
+  const normalizeHeader = (header) => String(header).trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  const resolveDateValue = (value) => {
+    if (!value) {
+      return '';
+    }
+
+    if (typeof value === 'number') {
+      const parsed = XLSX.SSF.parse_date_code(value);
+      if (parsed) {
+        return `${parsed.y}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`;
+      }
+    }
+
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      return value.toISOString().split('T')[0];
+    }
+
+    const parsedDate = new Date(value);
+    if (!Number.isNaN(parsedDate.getTime())) {
+      return parsedDate.toISOString().split('T')[0];
+    }
+
+    return '';
+  };
+
+  const mapImportedRow = (row) => {
+    const normalizedRow = Object.fromEntries(
+      Object.entries(row).map(([key, value]) => [normalizeHeader(key), value])
+    );
+
+    const category = String(normalizedRow.category || '').trim();
+    const subCategory = String(normalizedRow.subcategory || '').trim();
+    const amount = parseFloat(normalizedRow.amount);
+    const paymentMode = String(normalizedRow.paymentmode || normalizedRow.mode || PAYMENT_MODES[0]).trim();
+    const department = String(normalizedRow.department || normalizedRow.dept || DEPARTMENTS[0]).trim();
+    const vendorName = String(normalizedRow.vendorname || normalizedRow.vendor || '').trim();
+    const employeeName = String(normalizedRow.employeename || normalizedRow.employee || '').trim();
+
+    if (!category || !categories[category]) {
+      throw new Error(`Invalid category "${category || 'blank'}"`);
+    }
+
+    if (!subCategory || !categories[category]?.includes(subCategory)) {
+      throw new Error(`Invalid sub-category "${subCategory || 'blank'}" for ${category}`);
+    }
+
+    if (Number.isNaN(amount) || amount <= 0) {
+      throw new Error('Amount must be a positive number');
+    }
+
+    if (!vendorName) {
+      throw new Error('Vendor Name is required');
+    }
+
+    if (!employeeName) {
+      throw new Error('Employee Name is required');
+    }
+
+    const resolvedDate = resolveDateValue(normalizedRow.date);
+    if (!resolvedDate) {
+      throw new Error('Date is missing or invalid');
+    }
+
+    return {
+      expenseId: String(normalizedRow.expenseid || normalizedRow.id || '').trim(),
+      date: resolvedDate,
+      category,
+      subCategory,
+      amount,
+      paymentMode: PAYMENT_MODES.includes(paymentMode) ? paymentMode : PAYMENT_MODES[0],
+      vendorName,
+      department: DEPARTMENTS.includes(department) ? department : DEPARTMENTS[0],
+      employeeName,
+      description: String(normalizedRow.description || '').trim(),
+      attachment: String(normalizedRow.attachment || '').trim()
+    };
+  };
+
+  const handleImportClick = () => {
+    importInputRef.current?.click();
+  };
+
+  const handleImportFile = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+
+      if (!rows.length) {
+        showToast('Import file is empty', 'warning');
+        return;
+      }
+
+      const parsedExpenses = rows.map(mapImportedRow);
+      await saveExpensesBulk(parsedExpenses, {
+        importBatchId: `import-${Date.now()}`,
+        importFileName: file.name,
+        importedAt: new Date().toISOString()
+      });
+      await refreshExpenses();
+      showToast(`Imported ${parsedExpenses.length} expense record(s) successfully`, 'success');
+    } catch (error) {
+      showToast(`Import failed: ${error.message}`, 'warning');
+    } finally {
+      event.target.value = '';
+    }
+  };
+
+  const handleDeleteImportedBatch = async (batch) => {
+    const confirmed = window.confirm(`Delete all ${batch.count} records imported from ${batch.importFileName}?`);
+    if (!confirmed) {
+      return;
+    }
+
+    const removedCount = await deleteExpensesByImportBatch(batch.importBatchId);
+    await refreshExpenses();
+    showToast(`Deleted ${removedCount} imported record(s) from ${batch.importFileName}`, 'success');
+  };
+
+  const formatCurrency = (val) => {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      maximumFractionDigits: 0
+    }).format(val);
+  };
+
+  const sortIndicator = (field) => {
+    if (sortField !== field) {
+      return '';
+    }
+
+    return sortDirection === 'asc' ? ' ^' : ' v';
+  };
+
+  return (
+    <div className="panel-stack">
+      
+      {/* SUMMARY PANEL CARD ROW (Modified) */}
+      <div className="grid-4">
+        <div className="card metric-card" style={{ '--metric-accent': 'var(--primary)', '--metric-soft': 'var(--primary-soft)' }}>
+          <div className="metric-icon">
+            <TrendingUp size={16} />
+          </div>
+          <div>
+            <div className="metric-label">Filtered Spend</div>
+            <div className="metric-value">{formatCurrency(summaryTotalAmount)}</div>
+          </div>
+        </div>
+
+        <div className="card metric-card" style={{ '--metric-accent': 'var(--secondary)', '--metric-soft': 'rgba(59, 130, 246, 0.08)' }}>
+          <div className="metric-icon">
+            <Activity size={16} />
+          </div>
+          <div>
+            <div className="metric-label">Transactions Count</div>
+            <div className="metric-value">{summaryCount} Items</div>
+          </div>
+        </div>
+
+        <div className="card metric-card" style={{ '--metric-accent': 'var(--success)', '--metric-soft': 'var(--success-soft)' }}>
+          <div className="metric-icon">
+            <IndianRupee size={16} />
+          </div>
+          <div>
+            <div className="metric-label">Average Transaction</div>
+            <div className="metric-value">{formatCurrency(summaryAvgAmount)}</div>
+          </div>
+        </div>
+
+        <div className="card metric-card" style={{ '--metric-accent': 'var(--danger)', '--metric-soft': 'var(--danger-soft)' }}>
+          <div className="metric-icon">
+            <Award size={16} />
+          </div>
+          <div>
+            <div className="metric-label">Highest Expense</div>
+            <div className="metric-value">{formatCurrency(summaryMaxAmount)}</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="card panel-stack" style={{ gap: '12px' }}>
+        <div className="card-header">
+          <div>
+            <h3 className="section-title">Imported Files</h3>
+            <div className="section-copy">
+              Remove a specific import batch without clearing the whole ledger.
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {importedBatches.length === 0 ? (
+            <div className="empty-state">
+              No tracked import batches yet. Import a new CSV or XLSX file from this screen and its delete action will appear here.
+            </div>
+          ) : (
+            importedBatches.map((batch) => (
+              <div
+                key={batch.importBatchId}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                  padding: '12px 14px',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-sm)',
+                  backgroundColor: 'var(--surface)'
+                }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text)' }}>{batch.importFileName}</div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '3px' }}>
+                    {batch.count} records imported
+                    {batch.importedAt ? ` on ${new Date(batch.importedAt).toLocaleString('en-IN')}` : ''}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  className="btn btn-danger"
+                  onClick={() => handleDeleteImportedBatch(batch)}
+                  style={{ fontSize: '12px' }}
+                >
+                  <Trash2 size={14} />
+                  Delete Import
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* SEARCH & FILTERS GRID */}
+      <div className="card filter-panel">
+        <div className="filter-toolbar">
+          <div className="input-with-icon toolbar-search">
+            <input 
+              type="text" 
+              placeholder="Search ID, employee, vendor..." 
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+            />
+            <Search size={14} />
+          </div>
+
+          <div className="toolbar-actions">
+            <button className="btn btn-secondary btn-compact" onClick={handleClearFilters}>
+              Reset Filters
+            </button>
+            <div style={{ position: 'relative' }} ref={exportMenuRef}>
+              <button
+                className="btn btn-secondary btn-compact"
+                onClick={() => setExportMenuOpen((prev) => !prev)}
+              >
+                <Download size={14} />
+                Export
+              </button>
+              {exportMenuOpen && (
+                <div className="menu-panel" role="menu">
+                  <button className="menu-item" onClick={handleExportCSV} role="menuitem">
+                    CSV Format
+                  </button>
+                  <button className="menu-item" onClick={handleExportXLSX} role="menuitem">
+                    XLSX Format
+                  </button>
+                </div>
+              )}
+            </div>
+            <button className="btn btn-secondary btn-compact" onClick={handleImportClick}>
+              <Upload size={14} />
+              Import CSV/XLSX
+            </button>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".csv,.xlsx,.xls"
+              onChange={handleImportFile}
+              style={{ display: 'none' }}
+            />
+            <button className="btn btn-primary btn-compact" onClick={handleAddClick}>
+              <Plus size={14} />
+              Add Expense
+            </button>
+          </div>
+        </div>
+
+        {/* Advanced filters inputs row */}
+        <div className="filter-grid">
+          {/* Category Filter */}
+          <div>
+            <label>Category</label>
+            <select value={filterCategory} onChange={e => { setFilterCategory(e.target.value); setFilterSubCategory(''); }}>
+              <option value="">All Categories</option>
+              {availableCategories.map(cat => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Sub-Category Filter */}
+          <div>
+            <label>Sub-Category</label>
+            <select 
+              value={filterSubCategory} 
+              onChange={e => setFilterSubCategory(e.target.value)}
+              disabled={!filterCategory}
+            >
+              <option value="">All Sub-Categories</option>
+              {filterCategory && categories[filterCategory]?.map(sub => (
+                <option key={sub} value={sub}>{sub}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Department Filter */}
+          <div>
+            <label>Department</label>
+            <select value={filterDept} onChange={e => setFilterDept(e.target.value)}>
+              <option value="">All Departments</option>
+              {DEPARTMENTS.map(dept => (
+                <option key={dept} value={dept}>{dept}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Min Amount Filter */}
+          <div>
+            <label>Min Amount</label>
+            <input 
+              type="number" 
+              placeholder="Min ₹" 
+              value={filterMinAmount} 
+              onChange={e => setFilterMinAmount(e.target.value)} 
+            />
+          </div>
+
+          {/* Max Amount Filter */}
+          <div>
+            <label>Max Amount</label>
+            <input 
+              type="number" 
+              placeholder="Max ₹" 
+              value={filterMaxAmount} 
+              onChange={e => setFilterMaxAmount(e.target.value)} 
+            />
+          </div>
+
+          {/* Start Date Filter */}
+          <div>
+            <label>From Date</label>
+            <input 
+              type="date" 
+              value={filterStartDate} 
+              onChange={e => setFilterStartDate(e.target.value)} 
+            />
+          </div>
+
+          {/* End Date Filter */}
+          <div>
+            <label>To Date</label>
+            <input 
+              type="date" 
+              value={filterEndDate} 
+              onChange={e => setFilterEndDate(e.target.value)} 
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* TABLE SECTION */}
+      <div className="table-shell">
+        <div className="table-toolbar">
+          <div>
+            <h3 className="section-title">Expense Records</h3>
+            <div className="table-meta">{totalItems} matching entries</div>
+          </div>
+        </div>
+      <div className="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th onClick={() => handleSort('expenseId')} style={{ cursor: 'pointer' }}>
+                ID {sortField === 'expenseId' && (sortDirection === 'asc' ? '▲' : '▼')}
+              </th>
+              <th onClick={() => handleSort('date')} style={{ cursor: 'pointer' }}>
+                Date {sortField === 'date' && (sortDirection === 'asc' ? '▲' : '▼')}
+              </th>
+              <th className="text-left">Employee</th>
+              <th className="text-left">Category</th>
+              <th className="text-left">Sub-Category</th>
+              <th onClick={() => handleSort('amount')} style={{ cursor: 'pointer' }}>
+                Amount {sortField === 'amount' && (sortDirection === 'asc' ? '▲' : '▼')}
+              </th>
+              <th>Mode</th>
+              <th className="text-left">Vendor</th>
+              <th>Dept</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {currentRows.length === 0 ? (
+              <tr>
+                <td colSpan="10" style={{ padding: '40px', color: 'var(--text-muted)' }}>
+                  <AlertCircle size={32} style={{ display: 'block', margin: '0 auto 10px', color: 'var(--text-muted)' }} />
+                  No matching expense claims found in this directory.
+                </td>
+              </tr>
+            ) : (
+              currentRows.map((row) => (
+                <tr key={row.expenseId} onClick={() => handleViewClick(row)} style={{ cursor: 'pointer' }}>
+                  <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>{row.expenseId}</td>
+                  <td>{row.date}</td>
+                  <td className="text-left" style={{ fontWeight: 600 }}>{row.employeeName}</td>
+                  <td className="text-left" style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{row.category}</td>
+                  <td className="text-left" style={{ fontWeight: 500 }}>{row.subCategory}</td>
+                  <td style={{ fontWeight: 700 }}>{formatCurrency(row.amount)}</td>
+                  <td>{row.paymentMode}</td>
+                  <td className="text-left" style={{ maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {row.vendorName}
+                  </td>
+                  <td>
+                    <span style={{ fontSize: '11px', padding: '2px 6px', backgroundColor: 'var(--surface-muted)', border: '1px solid var(--border)', borderRadius: '2px' }}>
+                      {row.department}
+                    </span>
+                  </td>
+                  <td>
+                    <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                      <button 
+                        className="btn btn-ghost" 
+                        onClick={(e) => { e.stopPropagation(); handleViewClick(row); }}
+                        style={{ padding: '4px', color: 'var(--text-muted)' }}
+                        title="View Details"
+                      >
+                        <Eye size={13} />
+                      </button>
+                      <button 
+                        className="btn btn-ghost" 
+                        onClick={(e) => handleEditClick(row, e)}
+                        style={{ padding: '4px', color: 'var(--text-muted)' }}
+                        title="Edit Record"
+                      >
+                        <Edit3 size={13} />
+                      </button>
+                      <button 
+                        className="btn btn-ghost" 
+                        onClick={(e) => handleDeleteClick(row, e)}
+                        style={{ padding: '4px', color: 'var(--danger)' }}
+                        title="Delete Record"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+
+        </div>
+
+        {/* PAGINATION PANEL */}
+        {totalPages > 1 && (
+          <div className="pagination-bar">
+            <div className="pagination-summary">
+              Showing {indexOfFirstRow + 1} to {Math.min(indexOfLastRow, totalItems)} of {totalItems} entries
+            </div>
+
+            <div className="pagination-controls">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Rows per page:</span>
+                <select 
+                  value={rowsPerPage} 
+                  onChange={e => { setRowsPerPage(parseInt(e.target.value)); setCurrentPage(1); }}
+                  style={{ width: '60px', padding: '3px 6px', fontSize: '11px', height: '24px' }}
+                >
+                  {[10, 25, 50].map(size => (
+                    <option key={size} value={size}>{size}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="pagination-pages">
+                <button 
+                  className="btn btn-secondary btn-compact" 
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                  style={{ padding: '4px 8px', height: '26px' }}
+                >
+                  <ChevronLeft size={14} />
+                </button>
+                
+                {[...Array(totalPages)].map((_, idx) => (
+                  <button 
+                    key={idx}
+                    className={`btn btn-compact ${currentPage === idx + 1 ? 'btn-primary' : 'btn-secondary'}`}
+                    onClick={() => setCurrentPage(idx + 1)}
+                    style={{
+                      padding: '4px 10px',
+                      height: '26px',
+                      fontSize: '12px',
+                      backgroundColor: currentPage === idx + 1 ? 'var(--primary)' : 'var(--surface)',
+                      color: currentPage === idx + 1 ? '#ffffff' : 'var(--text)',
+                      borderColor: currentPage === idx + 1 ? 'var(--primary)' : 'var(--border-strong)'
+                    }}
+                  >
+                    {idx + 1}
+                  </button>
+                ))}
+
+                <button 
+                  className="btn btn-secondary btn-compact" 
+                  disabled={currentPage === totalPages}
+                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                  style={{ padding: '4px 8px', height: '26px' }}
+                >
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* CREATE / EDIT FORM MODAL */}
+      {formModalOpen && (
+        <div className="dialog-backdrop">
+          <div className="card dialog-card" role="dialog" aria-modal="true" aria-label={selectedExpense ? `Edit ${formData.expenseId}` : 'New accounting entry'}>
+            <button 
+              onClick={() => setFormModalOpen(false)}
+              className="dialog-close"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="dialog-header">
+              <h2 className="dialog-title">
+                {selectedExpense ? `Edit Ledger Claim (${formData.expenseId})` : 'New Accounting Entry'}
+              </h2>
+            </div>
+
+            <form onSubmit={handleFormSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label>Date *</label>
+                  <input 
+                    type="date" 
+                    name="date" 
+                    value={formData.date} 
+                    onChange={handleFormChange}
+                    required 
+                  />
+                </div>
+                <div>
+                  <label>Amount (₹) *</label>
+                  <input 
+                    type="number" 
+                    step="0.01" 
+                    name="amount" 
+                    value={formData.amount} 
+                    onChange={handleFormChange}
+                    placeholder="Enter amount"
+                    required 
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label>Category *</label>
+                  <select name="category" value={formData.category} onChange={handleFormChange} disabled={!availableCategories.length}>
+                    {availableCategories.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label>Sub-Category *</label>
+                  <select name="subCategory" value={formData.subCategory} onChange={handleFormChange} disabled={!formData.category}>
+                    {categories[formData.category]?.map(sub => (
+                      <option key={sub} value={sub}>{sub}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label>Employee Name *</label>
+                  <input 
+                    type="text" 
+                    name="employeeName" 
+                    value={formData.employeeName} 
+                    onChange={handleFormChange}
+                    placeholder="e.g. Emma Watson"
+                    required 
+                  />
+                </div>
+                <div>
+                  <label>Vendor Name *</label>
+                  <input 
+                    type="text" 
+                    name="vendorName" 
+                    value={formData.vendorName} 
+                    onChange={handleFormChange}
+                    placeholder="e.g. Google Ads Inc."
+                    required 
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label>Department *</label>
+                  <select name="department" value={formData.department} onChange={handleFormChange}>
+                    {DEPARTMENTS.map(dept => (
+                      <option key={dept} value={dept}>{dept}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label>Payment Mode *</label>
+                  <select name="paymentMode" value={formData.paymentMode} onChange={handleFormChange}>
+                    {PAYMENT_MODES.map(mode => (
+                      <option key={mode} value={mode}>{mode}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label>Invoice Attachment (PDF)</label>
+                <input
+                  type="file"
+                  accept=".pdf,application/pdf"
+                  onChange={handleAttachmentChange}
+                />
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
+                  {formData.attachment ? `Selected: ${formData.attachment}` : 'Upload an invoice PDF for this expense record.'}
+                </div>
+              </div>
+
+              <div>
+                <label>Description</label>
+                <textarea 
+                  name="description" 
+                  value={formData.description} 
+                  onChange={handleFormChange}
+                  rows="3"
+                  placeholder="Describe the purpose of this claim"
+                />
+              </div>
+
+              <div className="dialog-actions">
+                <button type="button" className="btn btn-secondary" onClick={() => setFormModalOpen(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary">
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* VIEW DETAILS MODAL */}
+      {detailsModalOpen && selectedExpense && (
+        <div className="dialog-backdrop">
+          <div className="card dialog-card" role="dialog" aria-modal="true" aria-label={`Claim details ${selectedExpense.expenseId}`}>
+            <button 
+              onClick={() => setDetailsModalOpen(false)}
+              className="dialog-close"
+            >
+              <X size={18} />
+            </button>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border)', paddingBottom: '10px' }}>
+              <h2 style={{ fontSize: '15px', fontWeight: 700, textTransform: 'uppercase' }}>
+                Claim File Details
+              </h2>
+              <span style={{ fontSize: '11px', padding: '1px 5px', backgroundColor: 'var(--border)', borderRadius: '2px', fontFamily: 'monospace' }}>
+                {selectedExpense.expenseId}
+              </span>
+            </div>
+
+            {/* Meta Grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', fontSize: '13px' }}>
+              <div>
+                <span style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>Employee</span>
+                <div style={{ fontWeight: 600, marginTop: '2px', fontSize: '14px' }}>{selectedExpense.employeeName}</div>
+              </div>
+              <div>
+                <span style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>Department</span>
+                <div style={{ marginTop: '2px' }}>{selectedExpense.department}</div>
+              </div>
+
+              <div>
+                <span style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>Category</span>
+                <div style={{ marginTop: '2px' }}>{selectedExpense.category}</div>
+              </div>
+              <div>
+                <span style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>Sub-Category</span>
+                <div style={{ fontWeight: 600, marginTop: '2px' }}>{selectedExpense.subCategory}</div>
+              </div>
+
+              <div>
+                <span style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>Claim Amount</span>
+                <div style={{ fontWeight: 700, fontSize: '16px', color: 'var(--primary)', marginTop: '2px' }}>{formatCurrency(selectedExpense.amount)}</div>
+              </div>
+              <div>
+                <span style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>Date Registered</span>
+                <div style={{ marginTop: '2px' }}>{selectedExpense.date}</div>
+              </div>
+
+              <div>
+                <span style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>Vendor / Merchant</span>
+                <div style={{ marginTop: '2px' }}>{selectedExpense.vendorName}</div>
+              </div>
+              <div>
+                <span style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>Payment Method</span>
+                <div style={{ marginTop: '2px' }}>{selectedExpense.paymentMode}</div>
+              </div>
+
+              <div>
+                <span style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>Receipt Attachment</span>
+                <div style={{ marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--primary)', fontWeight: 600, cursor: 'pointer' }}>
+                  <FileText size={14} />
+                  <span style={{ textDecoration: 'underline' }}>{selectedExpense.attachment || 'No PDF Invoice Attached'}</span>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: '10px' }}>
+              <span style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>Description / Purpose</span>
+              <div style={{ fontSize: '12px', lineHeight: 1.5, color: 'var(--text)', marginTop: '4px', padding: '10px', backgroundColor: 'var(--surface-muted)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)' }}>
+                {selectedExpense.description || 'No description provided.'}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--border)', paddingTop: '12px', marginTop: '10px' }}>
+              <button className="btn btn-secondary" onClick={() => setDetailsModalOpen(false)}>
+                Close Panel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE CONFIRMATION MODAL */}
+      {deleteConfirmOpen && selectedExpense && (
+        <div className="dialog-backdrop" style={{ zIndex: 510 }}>
+          <div className="card dialog-card dialog-card--sm" role="dialog" aria-modal="true" aria-label={`Delete ${selectedExpense.expenseId}`} style={{ textAlign: 'center' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', color: 'var(--danger)', margin: '10px 0 4px' }}>
+              <Trash2 size={40} />
+            </div>
+
+            <h3 style={{ fontSize: '14px', fontWeight: 700, textTransform: 'uppercase' }}>Delete Expense Record?</h3>
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+              Are you sure you want to permanently remove the expense record <strong style={{ color: 'var(--text)', fontFamily: 'monospace' }}>{selectedExpense.expenseId}</strong>? This action cannot be undone.
+            </p>
+
+            <div className="dialog-actions" style={{ justifyContent: 'center' }}>
+              <button className="btn btn-secondary" onClick={() => setDeleteConfirmOpen(false)}>
+                Cancel
+              </button>
+              <button className="btn btn-danger" onClick={confirmDelete}>
+                Delete Permanently
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default ExpenseTracker;

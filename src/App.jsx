@@ -1,0 +1,333 @@
+import { useState, useEffect, useRef } from 'react';
+import { 
+  LayoutDashboard, 
+  ReceiptText, 
+  FolderTree,
+  Menu, 
+  X, 
+  CheckCircle2, 
+  AlertCircle,
+  LogOut,
+  Sun,
+  Moon
+} from 'lucide-react';
+import { getInitialTheme, applyTheme } from './theme';
+import { initializeDB } from './services/expenseService';
+import { getExpenseCategories, initializeExpenseCategories } from './services/categories';
+import Dashboard from './components/Dashboard';
+import ExpenseTracker from './components/ExpenseTracker';
+import CategoryManagement from './components/CategoryManagement';
+import Login from './components/Login';
+import { LogoSidebar } from './components/BrandLogo';
+
+function App() {
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [theme, setTheme] = useState(getInitialTheme());
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
+  const [toasts, setToasts] = useState([]);
+  const [categories, setCategories] = useState(getExpenseCategories());
+  const [isBootstrapping, setIsBootstrapping] = useState(true);
+  const headerMenuRef = useRef(null);
+  
+  // Authentication state
+  const [user, setUser] = useState(null);
+
+  // Initialize database, apply theme, and check login session on load
+  useEffect(() => {
+    let isMounted = true;
+
+    const bootstrap = async () => {
+      try {
+        await initializeDB();
+        const initializedCategories = await initializeExpenseCategories();
+        if (isMounted) {
+          setCategories(initializedCategories);
+        }
+      } catch (error) {
+        showToast(`Startup sync failed: ${error.message}`, 'warning');
+      }
+
+      applyTheme(theme);
+
+      const storedUser = window.localStorage.getItem('iams_auth_user');
+      if (storedUser && isMounted) {
+        setUser(JSON.parse(storedUser));
+      }
+
+      if (isMounted) {
+        setIsBootstrapping(false);
+      }
+    };
+
+    bootstrap();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const handlePointerDown = (event) => {
+      if (headerMenuRef.current && !headerMenuRef.current.contains(event.target)) {
+        setHeaderMenuOpen(false);
+      }
+    };
+
+    window.addEventListener('pointerdown', handlePointerDown);
+    return () => window.removeEventListener('pointerdown', handlePointerDown);
+  }, []);
+
+  const handleThemeToggle = () => {
+    const nextTheme = theme === 'light' ? 'dark' : 'light';
+    setTheme(nextTheme);
+    applyTheme(nextTheme);
+  };
+
+  const handleLoginSuccess = (userData) => {
+    window.localStorage.setItem('iams_auth_user', JSON.stringify(userData));
+    setUser(userData);
+    showToast("Authentication successful. Welcome to i-AMS Console.", "success");
+  };
+
+  const handleLogout = () => {
+    window.localStorage.removeItem('iams_auth_user');
+    setHeaderMenuOpen(false);
+    setUser(null);
+    showToast("Session closed. Logged out successfully.", "success");
+  };
+
+  const showToast = (message, type = 'success') => {
+    const id = Date.now();
+    setToasts((prev) => [...prev, { id, message, type }]);
+    
+    // Auto remove after 3 seconds
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 3000);
+  };
+
+  const removeToast = (id) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  const pageMeta = {
+    dashboard: {
+      title: 'Ledger Board',
+      subtitle: 'Track spend movement, trends, and the latest accounting activity.'
+    },
+    tracker: {
+      title: 'Expense Directory',
+      subtitle: 'Manage claims, imports, filters, and record-level accounting actions.'
+    },
+    categories: {
+      title: 'Category Management',
+      subtitle: 'Control the category structure used across all expense records.'
+    }
+  };
+
+
+
+  if (isBootstrapping) {
+    return null;
+  }
+
+  // 1. Protected Routing: Render Login page if unauthenticated
+  if (!user) {
+    return (
+      <>
+        <Login
+          onLoginSuccess={handleLoginSuccess}
+          theme={theme}
+          onThemeToggle={handleThemeToggle}
+        />
+
+        {/* TOAST SYSTEM (Rendered globally) */}
+        <div className="toast-container">
+          {toasts.map((t) => (
+            <div key={t.id} className="toast">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {t.type === 'success' ? (
+                  <CheckCircle2 size={16} color="var(--success)" />
+                ) : (
+                  <AlertCircle size={16} color="var(--primary)" />
+                )}
+                <span>{t.message}</span>
+              </div>
+              <button className="toast-close" onClick={() => removeToast(t.id)}>
+                <X size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+      </>
+    );
+  }
+
+  // 2. Main Dashboard & Tracker Shell for Authenticated Admins
+  return (
+    <div className="app-container">
+        {/* LEFT SIDEBAR */}
+      <aside id="primary-sidebar" className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
+        <div className="sidebar-brand">
+          <LogoSidebar />
+        </div>
+
+        <nav className="sidebar-nav" aria-label="Primary">
+          <button
+            type="button"
+            className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveTab('dashboard');
+              setSidebarOpen(false);
+            }}
+            aria-current={activeTab === 'dashboard' ? 'page' : undefined}
+          >
+            <LayoutDashboard size={16} />
+            <span>Dashboard</span>
+          </button>
+
+          <button
+            type="button"
+            className={`nav-item ${activeTab === 'tracker' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveTab('tracker');
+              setSidebarOpen(false);
+            }}
+            aria-current={activeTab === 'tracker' ? 'page' : undefined}
+          >
+            <ReceiptText size={16} />
+            <span>Expense Tracker</span>
+          </button>
+
+          <button
+            type="button"
+            className={`nav-item ${activeTab === 'categories' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveTab('categories');
+              setSidebarOpen(false);
+            }}
+            aria-current={activeTab === 'categories' ? 'page' : undefined}
+          >
+            <FolderTree size={16} />
+            <span>Categories</span>
+          </button>
+        </nav>
+      </aside>
+
+      {/* MAIN CONTAINER */}
+      <div className="main-panel">
+        {/* HEADER */}
+        <header className="header">
+          <div className="header-inner">
+            <div className="header-title-section" style={{ gap: '14px' }}>
+              <button
+                className="menu-toggle-btn"
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+                aria-label={sidebarOpen ? 'Close navigation menu' : 'Open navigation menu'}
+                aria-expanded={sidebarOpen}
+                aria-controls="primary-sidebar"
+              >
+                {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
+              </button>
+
+              <div className="header-copy">
+                <h1 className="header-title">{pageMeta[activeTab].title}</h1>
+                <p className="header-subtitle">{pageMeta[activeTab].subtitle}</p>
+              </div>
+            </div>
+
+            <div className="header-right" ref={headerMenuRef}>
+              <div className="user-profile user-profile--compact">
+                <span className="user-profile-chip">Admin</span>
+              </div>
+
+              <button
+                type="button"
+                className="header-actions-toggle"
+                onClick={() => setHeaderMenuOpen((prev) => !prev)}
+                aria-expanded={headerMenuOpen}
+                aria-haspopup="menu"
+                title="Open quick actions"
+              >
+                {headerMenuOpen ? <X size={20} /> : <Menu size={20} />}
+              </button>
+
+              <div className={`header-actions-menu ${headerMenuOpen ? 'open' : ''}`} role="menu">
+                <button
+                  type="button"
+                  className="header-actions-item"
+                  onClick={handleThemeToggle}
+                  role="menuitem"
+                >
+                  <span className={`header-theme-switch ${theme === 'dark' ? 'is-dark' : ''}`}>
+                    <span className="header-theme-switch__thumb">
+                      <span className="header-theme-switch__icon header-theme-switch__icon--sun">
+                        <Sun size={12} />
+                      </span>
+                      <span className="header-theme-switch__icon header-theme-switch__icon--moon">
+                        <Moon size={12} />
+                      </span>
+                    </span>
+                  </span>
+                  <span>{theme === 'light' ? 'Light' : 'Dark'} Mode</span>
+                </button>
+
+                <button
+                  type="button"
+                  className="header-actions-item header-actions-item--danger"
+                  onClick={handleLogout}
+                  role="menuitem"
+                >
+                  <span className="header-actions-item__icon">
+                    <LogOut size={16} />
+                  </span>
+                  <span>Logout</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {/* CONTENT AREA */}
+        <main className="content-area">
+          {activeTab === 'dashboard' ? (
+            <Dashboard showToast={showToast} />
+          ) : activeTab === 'categories' ? (
+            <CategoryManagement
+              categories={categories}
+              onCategoriesChange={setCategories}
+              showToast={showToast}
+            />
+          ) : (
+            <ExpenseTracker
+              categories={categories}
+              showToast={showToast}
+            />
+          )}
+        </main>
+      </div>
+
+      {/* TOAST SYSTEM */}
+      <div className="toast-container">
+        {toasts.map((t) => (
+          <div key={t.id} className="toast">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {t.type === 'success' ? (
+                <CheckCircle2 size={16} color="var(--success)" />
+              ) : (
+                <AlertCircle size={16} color="var(--primary)" />
+              )}
+              <span>{t.message}</span>
+            </div>
+            <button className="toast-close" onClick={() => removeToast(t.id)}>
+              <X size={14} />
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export default App;
