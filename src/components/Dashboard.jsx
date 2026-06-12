@@ -525,25 +525,6 @@ function Dashboard({ categories, departments, showToast }) {
           </ChartSurface>
         </div>
 
-        {/* Chart 4: Dynamic Expense Distribution */}
-        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <h3 style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{meta.distributionTitle}</h3>
-          <ChartSurface minHeight={240}>
-            {({ width, height }) => (
-              <AreaChart width={width} height={height} data={charts.distributionSeries} margin={{ top: 10, right: 10, left: 10, bottom: 0 }} key={currentTheme}>
-                <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} />
-                <XAxis dataKey="label" stroke={chartTheme.textMuted} fontSize={11} tickLine={false} />
-                <YAxis stroke={chartTheme.textMuted} fontSize={11} tickLine={false} axisLine={false} tickFormatter={v => `₹${v/1000}k`} />
-                <Tooltip 
-                  contentStyle={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '4px' }}
-                  formatter={(value) => [formatCurrency(value), 'Spend']}
-                />
-                <Area type="monotone" dataKey="spend" stroke={chartTheme.secondary} fill={chartTheme.secondary} fillOpacity={0.15} strokeWidth={2} />
-              </AreaChart>
-            )}
-          </ChartSurface>
-        </div>
-
         {/* Chart 5: Top Spending Subcategories */}
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <h3 style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Top Spending Subcategories</h3>

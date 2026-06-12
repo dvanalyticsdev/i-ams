@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { Fragment, useState, useEffect, useRef } from 'react';
 import { 
   Plus, 
   Search, 
@@ -278,6 +278,36 @@ function ExpenseTracker({ categories, departments, showToast }) {
   const indexOfLastRow = currentPage * rowsPerPage;
   const indexOfFirstRow = indexOfLastRow - rowsPerPage;
   const currentRows = sortedItems.slice(indexOfFirstRow, indexOfLastRow);
+  const getVisiblePageNumbers = () => {
+    if (totalPages <= 7) {
+      return Array.from({ length: totalPages }, (_, index) => index + 1);
+    }
+
+    const visiblePages = new Set([1, totalPages, currentPage]);
+
+    for (let page = currentPage - 1; page <= currentPage + 1; page += 1) {
+      if (page > 1 && page < totalPages) {
+        visiblePages.add(page);
+      }
+    }
+
+    if (currentPage <= 3) {
+      visiblePages.add(2);
+      visiblePages.add(3);
+      visiblePages.add(4);
+    }
+
+    if (currentPage >= totalPages - 2) {
+      visiblePages.add(totalPages - 1);
+      visiblePages.add(totalPages - 2);
+      visiblePages.add(totalPages - 3);
+    }
+
+    return [...visiblePages]
+      .filter((page) => page >= 1 && page <= totalPages)
+      .sort((a, b) => a - b);
+  };
+  const visiblePageNumbers = getVisiblePageNumbers();
 
   // Filtered Summary Cards calculations (Simplified)
   const summaryTotalAmount = filteredItems.reduce((sum, e) => sum + e.amount, 0);
@@ -1278,24 +1308,45 @@ function ExpenseTracker({ categories, departments, showToast }) {
                 >
                   <ChevronLeft size={14} />
                 </button>
-                
-                {[...Array(totalPages)].map((_, idx) => (
-                  <button 
-                    key={idx}
-                    className={`btn btn-compact ${currentPage === idx + 1 ? 'btn-primary' : 'btn-secondary'}`}
-                    onClick={() => setCurrentPage(idx + 1)}
-                    style={{
-                      padding: '4px 10px',
-                      height: '26px',
-                      fontSize: '12px',
-                      backgroundColor: currentPage === idx + 1 ? 'var(--primary)' : 'var(--surface)',
-                      color: currentPage === idx + 1 ? '#ffffff' : 'var(--text)',
-                      borderColor: currentPage === idx + 1 ? 'var(--primary)' : 'var(--border-strong)'
-                    }}
-                  >
-                    {idx + 1}
-                  </button>
-                ))}
+
+                {visiblePageNumbers.map((page, index) => {
+                  const previousPage = visiblePageNumbers[index - 1];
+                  const hasGap = previousPage && page - previousPage > 1;
+
+                  return (
+                    <Fragment key={page}>
+                      {hasGap ? (
+                        <span
+                          style={{
+                            minWidth: '26px',
+                            height: '26px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '12px',
+                            color: 'var(--text-muted)'
+                          }}
+                        >
+                          ...
+                        </span>
+                      ) : null}
+                      <button
+                        className={`btn btn-compact ${currentPage === page ? 'btn-primary' : 'btn-secondary'}`}
+                        onClick={() => setCurrentPage(page)}
+                        style={{
+                          padding: '4px 10px',
+                          height: '26px',
+                          fontSize: '12px',
+                          backgroundColor: currentPage === page ? 'var(--primary)' : 'var(--surface)',
+                          color: currentPage === page ? '#ffffff' : 'var(--text)',
+                          borderColor: currentPage === page ? 'var(--primary)' : 'var(--border-strong)'
+                        }}
+                      >
+                        {page}
+                      </button>
+                    </Fragment>
+                  );
+                })}
 
                 <button 
                   className="btn btn-secondary btn-compact" 
