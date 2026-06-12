@@ -404,25 +404,32 @@ const buildTrendSeries = (expenses, start, end, granularity) => {
 };
 
 const buildTransactionCountSeries = (expenses, trendSeries, granularity) => {
-  const countByBucket = new Map(
-    trendSeries.map((entry) => [entry.bucketDate.toISOString(), 0])
+  const bucketStats = new Map(
+    trendSeries.map((entry) => [entry.bucketDate.toISOString(), { count: 0, totalAmount: 0 }])
   );
 
   expenses.forEach((expense) => {
     const bucketDate = getBucketStart(new Date(expense.date), granularity);
     const key = bucketDate.toISOString();
-    if (countByBucket.has(key)) {
-      countByBucket.set(key, (countByBucket.get(key) || 0) + 1);
+    if (bucketStats.has(key)) {
+      const current = bucketStats.get(key);
+      bucketStats.set(key, {
+        count: current.count + 1,
+        totalAmount: current.totalAmount + Number(expense.amount || 0),
+      });
     }
   });
 
-  const totalCount = expenses.length;
-  const averageCount = trendSeries.length ? totalCount / trendSeries.length : 0;
-
   return trendSeries.map((entry) => ({
     label: entry.label,
-    transactionCount: countByBucket.get(entry.bucketDate.toISOString()) || 0,
-    averageTransactionCount: Number(averageCount.toFixed(2)),
+    transactionCount: bucketStats.get(entry.bucketDate.toISOString())?.count || 0,
+    averageCosting: (() => {
+      const stats = bucketStats.get(entry.bucketDate.toISOString());
+      if (!stats || stats.count === 0) {
+        return 0;
+      }
+      return Math.round(stats.totalAmount / stats.count);
+    })(),
   }));
 };
 

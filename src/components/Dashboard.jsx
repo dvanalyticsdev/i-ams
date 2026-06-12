@@ -581,7 +581,7 @@ function Dashboard({ categories, departments, showToast }) {
         </div>
 
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <h3 style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Transaction Count vs Average</h3>
+          <h3 style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Transaction Count vs Average Costing</h3>
           <ChartSurface minHeight={240}>
             {({ width, height }) => (
               <ComposedChart
@@ -593,7 +593,23 @@ function Dashboard({ categories, departments, showToast }) {
               >
                 <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} vertical={false} />
                 <XAxis dataKey="label" stroke={chartTheme.textMuted} fontSize={11} tickLine={false} />
-                <YAxis stroke={chartTheme.textMuted} fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
+                <YAxis
+                  yAxisId="count"
+                  stroke={chartTheme.textMuted}
+                  fontSize={11}
+                  tickLine={false}
+                  axisLine={false}
+                  allowDecimals={false}
+                />
+                <YAxis
+                  yAxisId="cost"
+                  orientation="right"
+                  stroke={chartTheme.textMuted}
+                  fontSize={11}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(value) => formatCurrency(value)}
+                />
                 <Tooltip
                   contentStyle={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '4px' }}
                   formatter={(value, name) => {
@@ -601,15 +617,22 @@ function Dashboard({ categories, departments, showToast }) {
                       return [value, 'Transaction Count'];
                     }
 
-                    return [Number(value).toFixed(2), 'Average Transaction Count'];
+                    return [formatCurrency(value), 'Average Costing'];
                   }}
                 />
                 <Legend layout="horizontal" align="center" verticalAlign="bottom" iconSize={8} wrapperStyle={{ fontSize: 10 }} />
-                <Bar dataKey="transactionCount" name="Transaction Count" fill={chartTheme.primary} radius={[4, 4, 0, 0]} />
+                <Bar
+                  yAxisId="count"
+                  dataKey="transactionCount"
+                  name="Transaction Count"
+                  fill={chartTheme.primary}
+                  radius={[4, 4, 0, 0]}
+                />
                 <Line
                   type="monotone"
-                  dataKey="averageTransactionCount"
-                  name="Average Transaction Count"
+                  yAxisId="cost"
+                  dataKey="averageCosting"
+                  name="Average Costing"
                   stroke={chartTheme.secondary}
                   strokeWidth={2}
                   dot={false}
