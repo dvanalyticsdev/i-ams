@@ -291,11 +291,7 @@ const detectTrendGranularity = (rangeType, start, end) => {
     return 'week';
   }
 
-  if (rangeType === '3months') {
-    return 'week';
-  }
-
-  if (rangeType === '6months' || rangeType === 'ytd') {
+  if (rangeType === '3months' || rangeType === '6months' || rangeType === 'ytd') {
     return 'month';
   }
 
@@ -306,7 +302,7 @@ const detectTrendGranularity = (rangeType, start, end) => {
   if (spanDays <= 14) {
     return 'day';
   }
-  if (spanDays <= 120) {
+  if (spanDays < 90) {
     return 'week';
   }
   return 'month';
