@@ -120,7 +120,7 @@ function ExpenseTracker({ categories, showToast }) {
   const reloadExpenseTrackerView = () => {
     if (typeof window !== 'undefined') {
       window.setTimeout(() => {
-        window.location.reload();
+        window.location.assign(`${window.location.pathname}${window.location.search}${window.location.hash}`);
       }, 200);
     }
   };
@@ -387,13 +387,6 @@ function ExpenseTracker({ categories, showToast }) {
         ...prev,
         attachment: ''
       }));
-      return;
-    }
-
-    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
-    if (!isPdf) {
-      showToast("Only PDF invoice files are supported", "warning");
-      e.target.value = '';
       return;
     }
 
@@ -1351,14 +1344,13 @@ function ExpenseTracker({ categories, showToast }) {
               </div>
 
               <div>
-                <label>Invoice Attachment (PDF)</label>
+                <label>Invoice Attachment</label>
                 <input
                   type="file"
-                  accept=".pdf,application/pdf"
                   onChange={handleAttachmentChange}
                 />
                 <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
-                  {formData.attachment ? `Selected: ${formData.attachment}` : 'Upload an invoice PDF for this expense record.'}
+                  {formData.attachment ? `Selected: ${formData.attachment}` : 'Upload any invoice or supporting file for this expense record.'}
                 </div>
               </div>
 
@@ -1448,7 +1440,7 @@ function ExpenseTracker({ categories, showToast }) {
                 <span style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>Receipt Attachment</span>
                 <div style={{ marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--primary)', fontWeight: 600, cursor: 'pointer' }}>
                   <FileText size={14} />
-                  <span style={{ textDecoration: 'underline' }}>{selectedExpense.attachment || 'No PDF Invoice Attached'}</span>
+                  <span style={{ textDecoration: 'underline' }}>{selectedExpense.attachment || 'No Invoice Attachment'}</span>
                 </div>
               </div>
             </div>
