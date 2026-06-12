@@ -368,7 +368,7 @@ const formatBucketLabel = (bucketDate, granularity) => {
   }
 };
 
-const buildTrendSeries = (expenses, start, end, granularity) => {
+const buildTrendSeries = (expenses, start, end, granularity, useNumberedWeeks = false) => {
   const normalizedStart = getBucketStart(start, granularity);
   const bucketMap = new Map();
   const series = [];
@@ -376,7 +376,9 @@ const buildTrendSeries = (expenses, start, end, granularity) => {
   for (let cursor = new Date(normalizedStart); cursor <= end; cursor = addBucket(cursor, granularity, 1)) {
     const key = cursor.toISOString();
     bucketMap.set(key, {
-      label: formatBucketLabel(cursor, granularity),
+      label: useNumberedWeeks && granularity === 'week'
+        ? `Week ${series.length + 1}`
+        : formatBucketLabel(cursor, granularity),
       bucketDate: new Date(cursor),
       spend: 0,
     });
@@ -469,7 +471,7 @@ const getRangeMeta = (rangeType, granularity) => {
   };
 };
 
-const buildForecastFromTrendSeries = (trendSeries, granularity) => {
+const buildForecastFromTrendSeries = (trendSeries, granularity, useNumberedWeeks = false) => {
   if (trendSeries.length < 4) {
     return {
       forecastData: trendSeries.map((item) => ({
@@ -557,7 +559,9 @@ const buildForecastFromTrendSeries = (trendSeries, granularity) => {
     const varianceBand = bestModel.rmse * confidenceMultiplier * Math.sqrt(step);
 
     forecastData.push({
-      label: formatBucketLabel(nextDate, granularity),
+      label: useNumberedWeeks && granularity === 'week'
+        ? `Week ${trendSeries.length + step}`
+        : formatBucketLabel(nextDate, granularity),
       bucketDate: nextDate,
       spend: Math.round(projectedValue),
       actualSpend: null,
@@ -646,7 +650,14 @@ export const getDashboardAnalytics = (rangeType = 'month', customStart = null, c
     growthRate = ((totalSpend - previousPeriodSpend) / previousPeriodSpend) * 100;
   }
 
-  const trendSeries = buildTrendSeries(filtered, start, end, granularity);
+  const useNumberedWeeks = rangeType === 'currentMonth' || rangeType === 'month';
+  const trendSeries = buildTrendSeries(
+    filtered,
+    start,
+    end,
+    granularity,
+    useNumberedWeeks
+  );
   const latestBucketSpend = trendSeries.length ? trendSeries[trendSeries.length - 1].spend : 0;
 
   const categoryData = Object.keys(categorySpend)
@@ -693,7 +704,11 @@ export const getDashboardAnalytics = (rangeType = 'month', customStart = null, c
     granularity
   );
 
-  const forecastResult = buildForecastFromTrendSeries(trendSeries, granularity);
+  const forecastResult = buildForecastFromTrendSeries(
+    trendSeries,
+    granularity,
+    useNumberedWeeks
+  );
   const recentTimeline = filtered.slice(0, 8).map((expense) => ({
     id: expense.expenseId,
     date: expense.date,
