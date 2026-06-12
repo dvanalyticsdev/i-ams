@@ -288,7 +288,7 @@ const detectTrendGranularity = (rangeType, start, end) => {
   }
 
   if (rangeType === 'currentMonth' || rangeType === 'month') {
-    return 'day';
+    return 'week';
   }
 
   if (rangeType === '3months') {
@@ -303,10 +303,10 @@ const detectTrendGranularity = (rangeType, start, end) => {
   if (spanDays <= 2) {
     return 'hour';
   }
-  if (spanDays <= 45) {
+  if (spanDays <= 14) {
     return 'day';
   }
-  if (spanDays <= 180) {
+  if (spanDays <= 120) {
     return 'week';
   }
   return 'month';
