@@ -612,8 +612,8 @@ function Dashboard({ categories, departments, showToast }) {
                 />
                 <Tooltip
                   contentStyle={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '4px' }}
-                  formatter={(value, name) => {
-                    if (name === 'transactionCount') {
+                  formatter={(value, name, item) => {
+                    if (item?.dataKey === 'transactionCount') {
                       return [value, 'Transaction Count'];
                     }
 
