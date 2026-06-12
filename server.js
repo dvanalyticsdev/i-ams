@@ -53,10 +53,16 @@ const assertExpense = (expense) => {
   if (!expense.category) throw new Error('Category is required');
   if (!expense.subCategory) throw new Error('Sub-category is required');
   if (!Number.isFinite(expense.amount) || expense.amount <= 0) throw new Error('Amount must be a positive number');
-  if (!expense.paymentMode) throw new Error('Payment mode is required');
-  if (!expense.vendorName) throw new Error('Vendor name is required');
-  if (!expense.department) throw new Error('Department is required');
-  if (!expense.employeeName) throw new Error('Employee name is required');
+};
+
+const getDefaultCategorySelection = async () => {
+  const document = await getCategoriesDocument();
+  const availableCategories = Object.keys(document?.categories || {});
+  const category = availableCategories[0] || '';
+  return {
+    category,
+    subCategory: document?.categories?.[category]?.[0] || '',
+  };
 };
 
 const cloneDefaultCategories = () => JSON.parse(JSON.stringify(DEFAULT_EXPENSE_CATEGORIES));
@@ -184,9 +190,16 @@ app.get('/api/expenses', async (_request, response) => {
 app.post('/api/expenses', async (request, response) => {
   try {
     const payload = sanitizeExpense(request.body || {});
+    const defaultCategorySelection = await getDefaultCategorySelection();
     payload.expenseId = await getNextExpenseId(payload.date);
     if (!payload.date) {
       payload.date = new Date().toISOString().split('T')[0];
+    }
+    if (!payload.category) {
+      payload.category = defaultCategorySelection.category;
+    }
+    if (!payload.subCategory) {
+      payload.subCategory = defaultCategorySelection.subCategory;
     }
     assertExpense(payload);
 
@@ -203,6 +216,16 @@ app.put('/api/expenses/:expenseId', async (request, response) => {
       ...request.body,
       expenseId: request.params.expenseId,
     });
+    const defaultCategorySelection = await getDefaultCategorySelection();
+    if (!payload.date) {
+      payload.date = new Date().toISOString().split('T')[0];
+    }
+    if (!payload.category) {
+      payload.category = defaultCategorySelection.category;
+    }
+    if (!payload.subCategory) {
+      payload.subCategory = defaultCategorySelection.subCategory;
+    }
     assertExpense(payload);
 
     const result = await getExpensesCollection().findOneAndUpdate(
@@ -232,11 +255,18 @@ app.post('/api/expenses/bulk', async (request, response) => {
     const savedExpenses = [];
     for (const entry of entries) {
       const payload = sanitizeExpense(entry);
+      const defaultCategorySelection = await getDefaultCategorySelection();
       if (!payload.expenseId) {
         payload.expenseId = await getNextExpenseId(payload.date);
       }
       if (!payload.date) {
         payload.date = new Date().toISOString().split('T')[0];
+      }
+      if (!payload.category) {
+        payload.category = defaultCategorySelection.category;
+      }
+      if (!payload.subCategory) {
+        payload.subCategory = defaultCategorySelection.subCategory;
       }
       assertExpense(payload);
 

@@ -87,6 +87,14 @@ function ExpenseTracker({ categories, showToast }) {
   }, []);
 
   const availableCategories = Object.keys(categories);
+  const getDefaultCategorySelection = () => {
+    const firstCategory = availableCategories[0] || '';
+    return {
+      category: firstCategory,
+      subCategory: categories[firstCategory]?.[0] || ''
+    };
+  };
+  const getTodayDate = () => new Date().toISOString().split('T')[0];
 
   useEffect(() => {
     if (filterCategory && !categories[filterCategory]) {
@@ -106,11 +114,9 @@ function ExpenseTracker({ categories, showToast }) {
       }
 
       if (!prev.category || !categories[prev.category]) {
-        const nextCategory = availableCategories[0];
         return {
           ...prev,
-          category: nextCategory,
-          subCategory: categories[nextCategory]?.[0] || ''
+          ...getDefaultCategorySelection()
         };
       }
 
@@ -264,12 +270,11 @@ function ExpenseTracker({ categories, showToast }) {
       return;
     }
 
-    const firstCategory = availableCategories[0] || '';
+    const defaultCategorySelection = getDefaultCategorySelection();
     setFormData({
       expenseId: '',
-      date: new Date().toISOString().split('T')[0],
-      category: firstCategory,
-      subCategory: categories[firstCategory]?.[0] || '',
+      date: getTodayDate(),
+      ...defaultCategorySelection,
       amount: '',
       paymentMode: PAYMENT_MODES[0],
       vendorName: '',
@@ -382,19 +387,18 @@ function ExpenseTracker({ categories, showToast }) {
       showToast("Amount must be a positive number", "warning");
       return;
     }
-
-    if (!formData.employeeName.trim()) {
-      showToast("Employee Name is required", "warning");
-      return;
-    }
-
-    if (!formData.vendorName.trim()) {
-      showToast("Vendor Name is required", "warning");
-      return;
-    }
+    const defaultCategorySelection = getDefaultCategorySelection();
 
     const payload = {
       ...formData,
+      date: formData.date || getTodayDate(),
+      category: formData.category || defaultCategorySelection.category,
+      subCategory: formData.subCategory || defaultCategorySelection.subCategory,
+      paymentMode: formData.paymentMode || PAYMENT_MODES[0],
+      department: formData.department || DEPARTMENTS[0],
+      vendorName: formData.vendorName.trim(),
+      employeeName: formData.employeeName.trim(),
+      description: formData.description.trim(),
       amount: parseFloat(formData.amount)
     };
 
@@ -498,42 +502,31 @@ function ExpenseTracker({ categories, showToast }) {
       Object.entries(row).map(([key, value]) => [normalizeHeader(key), value])
     );
 
-    const category = String(normalizedRow.category || '').trim();
-    const subCategory = String(normalizedRow.subcategory || '').trim();
+    const defaultCategorySelection = getDefaultCategorySelection();
+    const rawCategory = String(normalizedRow.category || '').trim();
+    const category = rawCategory && categories[rawCategory]
+      ? rawCategory
+      : defaultCategorySelection.category;
+    const availableSubCategories = categories[category] || [];
+    const rawSubCategory = String(normalizedRow.subcategory || '').trim();
+    const subCategory = rawSubCategory && availableSubCategories.includes(rawSubCategory)
+      ? rawSubCategory
+      : (availableSubCategories[0] || '');
     const amount = parseFloat(normalizedRow.amount);
     const paymentMode = String(normalizedRow.paymentmode || normalizedRow.mode || PAYMENT_MODES[0]).trim();
     const department = String(normalizedRow.department || normalizedRow.dept || DEPARTMENTS[0]).trim();
     const vendorName = String(normalizedRow.vendorname || normalizedRow.vendor || '').trim();
     const employeeName = String(normalizedRow.employeename || normalizedRow.employee || '').trim();
 
-    if (!category || !categories[category]) {
-      throw new Error(`Invalid category "${category || 'blank'}"`);
-    }
-
-    if (!subCategory || !categories[category]?.includes(subCategory)) {
-      throw new Error(`Invalid sub-category "${subCategory || 'blank'}" for ${category}`);
-    }
-
     if (Number.isNaN(amount) || amount <= 0) {
       throw new Error('Amount must be a positive number');
     }
 
-    if (!vendorName) {
-      throw new Error('Vendor Name is required');
-    }
-
-    if (!employeeName) {
-      throw new Error('Employee Name is required');
-    }
-
     const resolvedDate = resolveDateValue(normalizedRow.date);
-    if (!resolvedDate) {
-      throw new Error('Date is missing or invalid');
-    }
 
     return {
       expenseId: String(normalizedRow.expenseid || normalizedRow.id || '').trim(),
-      date: resolvedDate,
+      date: resolvedDate || getTodayDate(),
       category,
       subCategory,
       amount,
@@ -1021,13 +1014,12 @@ function ExpenseTracker({ categories, showToast }) {
             <form onSubmit={handleFormSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
-                  <label>Date *</label>
+                  <label>Date</label>
                   <input 
                     type="date" 
                     name="date" 
                     value={formData.date} 
                     onChange={handleFormChange}
-                    required 
                   />
                 </div>
                 <div>
@@ -1046,7 +1038,7 @@ function ExpenseTracker({ categories, showToast }) {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
-                  <label>Category *</label>
+                  <label>Category</label>
                   <select name="category" value={formData.category} onChange={handleFormChange} disabled={!availableCategories.length}>
                     {availableCategories.map(cat => (
                       <option key={cat} value={cat}>{cat}</option>
@@ -1054,7 +1046,7 @@ function ExpenseTracker({ categories, showToast }) {
                   </select>
                 </div>
                 <div>
-                  <label>Sub-Category *</label>
+                  <label>Sub-Category</label>
                   <select name="subCategory" value={formData.subCategory} onChange={handleFormChange} disabled={!formData.category}>
                     {categories[formData.category]?.map(sub => (
                       <option key={sub} value={sub}>{sub}</option>
@@ -1065,32 +1057,30 @@ function ExpenseTracker({ categories, showToast }) {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
-                  <label>Employee Name *</label>
+                  <label>Employee Name</label>
                   <input 
                     type="text" 
                     name="employeeName" 
                     value={formData.employeeName} 
                     onChange={handleFormChange}
                     placeholder="e.g. Emma Watson"
-                    required 
                   />
                 </div>
                 <div>
-                  <label>Vendor Name *</label>
+                  <label>Vendor Name</label>
                   <input 
                     type="text" 
                     name="vendorName" 
                     value={formData.vendorName} 
                     onChange={handleFormChange}
                     placeholder="e.g. Google Ads Inc."
-                    required 
                   />
                 </div>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
-                  <label>Department *</label>
+                  <label>Department</label>
                   <select name="department" value={formData.department} onChange={handleFormChange}>
                     {DEPARTMENTS.map(dept => (
                       <option key={dept} value={dept}>{dept}</option>
@@ -1098,7 +1088,7 @@ function ExpenseTracker({ categories, showToast }) {
                   </select>
                 </div>
                 <div>
-                  <label>Payment Mode *</label>
+                  <label>Payment Mode</label>
                   <select name="paymentMode" value={formData.paymentMode} onChange={handleFormChange}>
                     {PAYMENT_MODES.map(mode => (
                       <option key={mode} value={mode}>{mode}</option>
