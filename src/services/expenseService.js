@@ -114,6 +114,7 @@ export const saveExpense = async (expense) => {
 };
 
 export const saveExpensesBulk = async (expenses, importMeta = null) => {
+  const currentExpenses = getExpenses();
   const payload = expenses.map((expense) => ({
     ...expense,
     ...(importMeta || {}),
@@ -125,9 +126,15 @@ export const saveExpensesBulk = async (expenses, importMeta = null) => {
       body: JSON.stringify({ expenses: payload }),
     });
 
-    return initializeDB().then(() => savedExpenses);
+    const savedExpenseIds = new Set(savedExpenses.map((expense) => expense.expenseId));
+    const nextExpenses = [
+      ...savedExpenses,
+      ...currentExpenses.filter((expense) => !savedExpenseIds.has(expense.expenseId)),
+    ];
+
+    writeExpenseCache(sortExpensesByDate(nextExpenses));
+    return savedExpenses;
   } catch {
-    const currentExpenses = getExpenses();
     const generatedExpenses = [];
 
     payload.forEach((expense) => {

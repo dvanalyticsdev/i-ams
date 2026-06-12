@@ -117,13 +117,6 @@ function ExpenseTracker({ categories, showToast }) {
     };
   };
   const getTodayDate = () => formatDateForInput(new Date());
-  const reloadExpenseTrackerView = () => {
-    if (typeof window !== 'undefined') {
-      window.setTimeout(() => {
-        window.location.assign(`${window.location.pathname}${window.location.search}${window.location.hash}`);
-      }, 200);
-    }
-  };
 
   useEffect(() => {
     if (filterCategory && !categories[filterCategory]) {
@@ -809,10 +802,9 @@ function ExpenseTracker({ categories, showToast }) {
         importFileName: file.name,
         importedAt: new Date().toISOString()
       });
-      await refreshExpenses();
+      setExpenses(getExpenses());
       setCurrentPage(1);
       showToast(`Imported ${parsedExpenses.length} expense record(s) successfully`, 'success');
-      reloadExpenseTrackerView();
     } catch (error) {
       showToast(`Import failed: ${error.message}`, 'warning');
     } finally {
@@ -827,10 +819,9 @@ function ExpenseTracker({ categories, showToast }) {
     }
 
     const removedCount = await deleteExpensesByImportBatch(batch.importBatchId);
-    await refreshExpenses();
+    setExpenses(getExpenses());
     setCurrentPage(1);
     showToast(`Deleted ${removedCount} imported record(s) from ${batch.importFileName}`, 'success');
-    reloadExpenseTrackerView();
   };
 
   const formatCurrency = (val) => {
