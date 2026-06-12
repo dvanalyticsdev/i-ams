@@ -87,6 +87,28 @@ function ExpenseTracker({ categories, showToast }) {
   }, []);
 
   const availableCategories = Object.keys(categories);
+  const formatDateForInput = (value) => {
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return '';
+    }
+
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  };
+  const formatDateTimeForDisplay = (value) => {
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return '';
+    }
+
+    return new Intl.DateTimeFormat('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    }).format(date);
+  };
   const getDefaultCategorySelection = () => {
     const firstCategory = availableCategories[0] || '';
     return {
@@ -94,7 +116,14 @@ function ExpenseTracker({ categories, showToast }) {
       subCategory: categories[firstCategory]?.[0] || ''
     };
   };
-  const getTodayDate = () => new Date().toISOString().split('T')[0];
+  const getTodayDate = () => formatDateForInput(new Date());
+  const reloadExpenseTrackerView = () => {
+    if (typeof window !== 'undefined') {
+      window.setTimeout(() => {
+        window.location.reload();
+      }, 200);
+    }
+  };
 
   useEffect(() => {
     if (filterCategory && !categories[filterCategory]) {
@@ -506,12 +535,12 @@ function ExpenseTracker({ categories, showToast }) {
     }
 
     if (value instanceof Date && !Number.isNaN(value.getTime())) {
-      return value.toISOString().split('T')[0];
+      return formatDateForInput(value);
     }
 
     const parsedDate = new Date(value);
     if (!Number.isNaN(parsedDate.getTime())) {
-      return parsedDate.toISOString().split('T')[0];
+      return formatDateForInput(parsedDate);
     }
 
     return '';
@@ -531,7 +560,7 @@ function ExpenseTracker({ categories, showToast }) {
       return '';
     }
 
-    return new Date(Date.UTC(fullYear, monthIndex, 1)).toISOString().split('T')[0];
+    return `${fullYear}-${String(monthIndex + 1).padStart(2, '0')}-01`;
   };
 
   const resolveCategoryEntry = (label, fallbackCategory = '') => {
@@ -790,6 +819,7 @@ function ExpenseTracker({ categories, showToast }) {
       await refreshExpenses();
       setCurrentPage(1);
       showToast(`Imported ${parsedExpenses.length} expense record(s) successfully`, 'success');
+      reloadExpenseTrackerView();
     } catch (error) {
       showToast(`Import failed: ${error.message}`, 'warning');
     } finally {
@@ -807,6 +837,7 @@ function ExpenseTracker({ categories, showToast }) {
     await refreshExpenses();
     setCurrentPage(1);
     showToast(`Deleted ${removedCount} imported record(s) from ${batch.importFileName}`, 'success');
+    reloadExpenseTrackerView();
   };
 
   const formatCurrency = (val) => {
@@ -905,7 +936,7 @@ function ExpenseTracker({ categories, showToast }) {
                   <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text)' }}>{batch.importFileName}</div>
                   <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '3px' }}>
                     {batch.count} records imported
-                    {batch.importedAt ? ` on ${new Date(batch.importedAt).toLocaleString('en-IN')}` : ''}
+                    {batch.importedAt ? ` on ${formatDateTimeForDisplay(batch.importedAt)}` : ''}
                   </div>
                 </div>
 
