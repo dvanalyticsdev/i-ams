@@ -269,6 +269,11 @@ app.get('/api/categories', async (_request, response) => {
   response.json(document.categories);
 });
 
+app.get('/api/categories/init', async (_request, response) => {
+  const document = await getCategoriesDocument();
+  response.json(document.categories);
+});
+
 app.post('/api/categories/init', async (_request, response) => {
   const document = await getCategoriesDocument();
   response.json(document.categories);

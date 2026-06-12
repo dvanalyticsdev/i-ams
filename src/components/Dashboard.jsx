@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { 
   LineChart, 
   Line, 
@@ -34,9 +34,9 @@ import { getDashboardAnalytics } from '../services/expenseService';
 function ChartSurface({ minHeight, children }) {
   const containerRef = useRef(null);
   const frameRef = useRef(null);
-  const [size, setSize] = useState({ width: 0, height: minHeight });
+  const [size, setSize] = useState(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const element = containerRef.current;
     if (!element) {
       return undefined;
@@ -49,11 +49,11 @@ function ChartSurface({ minHeight, children }) {
       }
 
       frameRef.current = requestAnimationFrame(() => {
-        const nextWidth = Math.round(width);
-        const nextHeight = Math.round(height);
+        const nextWidth = Math.max(Math.round(width), 0);
+        const nextHeight = Math.max(Math.round(height), minHeight);
 
         setSize((current) => {
-          if (current.width === nextWidth && current.height === nextHeight) {
+          if (current && current.width === nextWidth && current.height === nextHeight) {
             return current;
           }
 
@@ -79,8 +79,8 @@ function ChartSurface({ minHeight, children }) {
   }, [minHeight]);
 
   return (
-    <div ref={containerRef} style={{ width: '100%', height: `${minHeight}px`, minWidth: 0, minHeight: `${minHeight}px` }}>
-      {size.width > 0 && size.height > 0 ? children(size) : null}
+    <div ref={containerRef} style={{ width: '100%', height: `${minHeight}px`, minWidth: 0, minHeight: `${minHeight}px`, overflow: 'hidden' }}>
+      {size && size.width > 0 && size.height > 0 ? children(size) : null}
     </div>
   );
 }
