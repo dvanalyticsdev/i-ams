@@ -815,6 +815,8 @@ tr:hover td {
   align-items: center;
   justify-content: space-between;
   padding: 18px 18px 0;
+  position: relative;
+  z-index: 50;
 }
 
 .header-inner {
@@ -829,6 +831,8 @@ tr:hover td {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  position: relative;
+  z-index: 51;
 }
 
 .header-title-section {
@@ -877,6 +881,7 @@ tr:hover td {
   align-items: center;
   gap: var(--space-3);
   position: relative;
+  z-index: 52;
 }
 
 .user-profile {
@@ -940,6 +945,7 @@ tr:hover td {
   display: none;
   flex-direction: column;
   gap: 6px;
+  z-index: 60;
 }
 
 .header-actions-menu.open {

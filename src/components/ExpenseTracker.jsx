@@ -1423,25 +1423,15 @@ function ExpenseTracker({ categories, departments, showToast }) {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <div>
-                  <label>Invoice Number</label>
-                  <input 
-                    type="text" 
-                    name="invoiceNumber" 
-                    value={formData.invoiceNumber} 
-                    onChange={handleFormChange}
-                    placeholder="e.g. INV-2026-001"
-                  />
-                </div>
-                <div>
-                  <label>Payment Mode</label>
-                  <select name="paymentMode" value={formData.paymentMode} onChange={handleFormChange}>
-                    {PAYMENT_MODES.map(mode => (
-                      <option key={mode} value={mode}>{mode}</option>
-                    ))}
-                  </select>
-                </div>
+              <div>
+                <label>Description</label>
+                <textarea 
+                  name="description" 
+                  value={formData.description} 
+                  onChange={handleFormChange}
+                  rows="3"
+                  placeholder="Describe the purpose of this claim"
+                />
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
@@ -1478,14 +1468,32 @@ function ExpenseTracker({ categories, departments, showToast }) {
                     placeholder="e.g. Google Ads Inc."
                   />
                 </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
                   <label>Department</label>
                   <select name="department" value={formData.department} onChange={handleFormChange}>
                     {availableDepartments.map(dept => (
                       <option key={dept} value={dept}>{dept}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label>Invoice Number</label>
+                  <input 
+                    type="text" 
+                    name="invoiceNumber" 
+                    value={formData.invoiceNumber} 
+                    onChange={handleFormChange}
+                    placeholder="e.g. INV-2026-001"
+                  />
+                </div>
+                <div>
+                  <label>Payment Mode</label>
+                  <select name="paymentMode" value={formData.paymentMode} onChange={handleFormChange}>
+                    {PAYMENT_MODES.map(mode => (
+                      <option key={mode} value={mode}>{mode}</option>
                     ))}
                   </select>
                 </div>
@@ -1500,17 +1508,6 @@ function ExpenseTracker({ categories, departments, showToast }) {
                 <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
                   {formData.attachment ? `Selected: ${formData.attachment}` : 'Upload any invoice or supporting file for this expense record.'}
                 </div>
-              </div>
-
-              <div>
-                <label>Description</label>
-                <textarea 
-                  name="description" 
-                  value={formData.description} 
-                  onChange={handleFormChange}
-                  rows="3"
-                  placeholder="Describe the purpose of this claim"
-                />
               </div>
 
               <div className="dialog-actions">
