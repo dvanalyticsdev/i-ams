@@ -39,6 +39,7 @@ const sanitizeExpense = (expense) => {
     vendorName: String(expense.vendorName || '').trim(),
     department: String(expense.department || '').trim(),
     employeeName: String(expense.employeeName || '').trim(),
+    approvedBy: String(expense.approvedBy || '').trim(),
     invoiceNumber: String(expense.invoiceNumber || '').trim(),
     description: String(expense.description || '').trim(),
     attachment: String(expense.attachment || '').trim(),

@@ -69,6 +69,7 @@ function ExpenseTracker({ categories, departments, showToast }) {
     vendorName: '',
     department: DEFAULT_DEPARTMENTS[0],
     employeeName: '',
+    approvedBy: '',
     description: '',
     attachment: ''
   });
@@ -214,9 +215,10 @@ function ExpenseTracker({ categories, departments, showToast }) {
         const matchesId = item.expenseId.toLowerCase().includes(term);
         const matchesInvoice = String(item.invoiceNumber || '').toLowerCase().includes(term);
         const matchesEmployee = item.employeeName.toLowerCase().includes(term);
+        const matchesApprovedBy = String(item.approvedBy || '').toLowerCase().includes(term);
         const matchesVendor = item.vendorName.toLowerCase().includes(term);
         const matchesDesc = item.description.toLowerCase().includes(term);
-        if (!matchesId && !matchesInvoice && !matchesEmployee && !matchesVendor && !matchesDesc) {
+        if (!matchesId && !matchesInvoice && !matchesEmployee && !matchesApprovedBy && !matchesVendor && !matchesDesc) {
           return false;
         }
       }
@@ -320,6 +322,7 @@ function ExpenseTracker({ categories, departments, showToast }) {
       vendorName: '',
       department: availableDepartments[0],
       employeeName: '',
+      approvedBy: '',
       description: '',
       attachment: ''
     });
@@ -341,6 +344,7 @@ function ExpenseTracker({ categories, departments, showToast }) {
       vendorName: expense.vendorName,
       department: expense.department,
       employeeName: expense.employeeName,
+      approvedBy: expense.approvedBy || '',
       description: expense.description,
       attachment: expense.attachment || ''
     });
@@ -433,6 +437,7 @@ function ExpenseTracker({ categories, departments, showToast }) {
       invoiceNumber: formData.invoiceNumber.trim(),
       vendorName: formData.vendorName.trim(),
       employeeName: formData.employeeName.trim(),
+      approvedBy: formData.approvedBy.trim(),
       description: formData.description.trim(),
       amount: parseFloat(formData.amount)
     };
@@ -461,7 +466,8 @@ function ExpenseTracker({ categories, departments, showToast }) {
       'Payment Mode': expense.paymentMode,
       'Vendor Name': expense.vendorName,
       Department: expense.department,
-      'Employee Name': expense.employeeName,
+      'Expense By': expense.employeeName,
+      'Approved By': expense.approvedBy || '',
       Description: expense.description,
       Attachment: expense.attachment || ''
     }));
@@ -610,7 +616,8 @@ function ExpenseTracker({ categories, departments, showToast }) {
     category,
     subCategory,
     vendorName = '',
-    employeeName = ''
+    employeeName = '',
+    approvedBy = ''
   }) => {
     const expensesFromRow = [];
     const monthEntries = Object.entries(row).filter(([header]) => monthHeaderPattern.test(String(header).trim()));
@@ -641,6 +648,7 @@ function ExpenseTracker({ categories, departments, showToast }) {
         vendorName: isFacultyFee ? '' : vendorName,
         department: availableDepartments[0],
         employeeName: isFacultyFee ? (employeeName || vendorName) : employeeName,
+        approvedBy,
         description: `Imported from ${sheetName} - ${String(header).trim()}`,
         attachment: ''
       });
@@ -800,6 +808,7 @@ function ExpenseTracker({ categories, departments, showToast }) {
     const vendorName = String(normalizedRow.vendorname || normalizedRow.vendor || '').trim();
     const employeeName = String(
       normalizedRow.employeename ||
+      normalizedRow.expenseby ||
       normalizedRow.employee ||
       normalizedRow.expensesby ||
       ''
@@ -824,9 +833,8 @@ function ExpenseTracker({ categories, departments, showToast }) {
       vendorName,
       department: availableDepartments.includes(department) ? department : availableDepartments[0],
       employeeName,
-      description: approvedBy
-        ? `${description}${description ? ' ' : ''}Approved By: ${approvedBy}`
-        : description,
+      approvedBy,
+      description,
       attachment: String(normalizedRow.attachment || '').trim()
     };
   };
@@ -1165,7 +1173,7 @@ function ExpenseTracker({ categories, departments, showToast }) {
               <th onClick={() => handleSort('date')} style={{ cursor: 'pointer' }}>
                 Date {sortField === 'date' && (sortDirection === 'asc' ? '▲' : '▼')}
               </th>
-              <th className="text-left">Employee</th>
+              <th className="text-left">Expense By</th>
               <th className="text-left">Category</th>
               <th className="text-left">Sub-Category</th>
               <th onClick={() => handleSort('amount')} style={{ cursor: 'pointer' }}>
@@ -1387,7 +1395,7 @@ function ExpenseTracker({ categories, departments, showToast }) {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
-                  <label>Employee Name</label>
+                  <label>Expense By</label>
                   <input 
                     type="text" 
                     name="employeeName" 
@@ -1396,6 +1404,19 @@ function ExpenseTracker({ categories, departments, showToast }) {
                     placeholder="e.g. Emma Watson"
                   />
                 </div>
+                <div>
+                  <label>Approved By</label>
+                  <input 
+                    type="text" 
+                    name="approvedBy" 
+                    value={formData.approvedBy} 
+                    onChange={handleFormChange}
+                    placeholder="e.g. Rajesh Kumar"
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
                   <label>Vendor Name</label>
                   <input 
@@ -1477,7 +1498,7 @@ function ExpenseTracker({ categories, departments, showToast }) {
             {/* Meta Grid */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', fontSize: '13px' }}>
               <div>
-                <span style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>Employee</span>
+                <span style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>Expense By</span>
                 <div style={{ fontWeight: 600, marginTop: '2px', fontSize: '14px' }}>{selectedExpense.employeeName}</div>
               </div>
               <div>
@@ -1496,6 +1517,10 @@ function ExpenseTracker({ categories, departments, showToast }) {
               <div>
                 <span style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>Invoice Number</span>
                 <div style={{ marginTop: '2px', fontFamily: 'monospace' }}>{selectedExpense.invoiceNumber || 'Not provided'}</div>
+              </div>
+              <div>
+                <span style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>Approved By</span>
+                <div style={{ marginTop: '2px' }}>{selectedExpense.approvedBy || 'Not provided'}</div>
               </div>
 
               <div>
