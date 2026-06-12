@@ -168,6 +168,12 @@ const getNextExpenseId = async (dateValue) => {
 
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
+app.use('/api', (_request, response, next) => {
+  response.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  response.setHeader('Pragma', 'no-cache');
+  response.setHeader('Expires', '0');
+  next();
+});
 
 app.use('/api', async (_request, _response, next) => {
   try {

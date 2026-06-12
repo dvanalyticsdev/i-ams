@@ -132,8 +132,8 @@ function ExpenseTracker({ categories, showToast }) {
   }, [categories, filterCategory, filterSubCategory]);
 
   const refreshExpenses = async () => {
-    await initializeDB();
-    setExpenses(getExpenses());
+    const nextExpenses = await initializeDB();
+    setExpenses(nextExpenses);
   };
 
   // Reset pagination when filters change
@@ -788,6 +788,7 @@ function ExpenseTracker({ categories, showToast }) {
         importedAt: new Date().toISOString()
       });
       await refreshExpenses();
+      setCurrentPage(1);
       showToast(`Imported ${parsedExpenses.length} expense record(s) successfully`, 'success');
     } catch (error) {
       showToast(`Import failed: ${error.message}`, 'warning');
@@ -804,6 +805,7 @@ function ExpenseTracker({ categories, showToast }) {
 
     const removedCount = await deleteExpensesByImportBatch(batch.importBatchId);
     await refreshExpenses();
+    setCurrentPage(1);
     showToast(`Deleted ${removedCount} imported record(s) from ${batch.importFileName}`, 'success');
   };
 
