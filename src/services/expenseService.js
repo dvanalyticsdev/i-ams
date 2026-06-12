@@ -403,6 +403,29 @@ const buildTrendSeries = (expenses, start, end, granularity) => {
   }));
 };
 
+const buildTransactionCountSeries = (expenses, trendSeries, granularity) => {
+  const countByBucket = new Map(
+    trendSeries.map((entry) => [entry.bucketDate.toISOString(), 0])
+  );
+
+  expenses.forEach((expense) => {
+    const bucketDate = getBucketStart(new Date(expense.date), granularity);
+    const key = bucketDate.toISOString();
+    if (countByBucket.has(key)) {
+      countByBucket.set(key, (countByBucket.get(key) || 0) + 1);
+    }
+  });
+
+  const totalCount = expenses.length;
+  const averageCount = trendSeries.length ? totalCount / trendSeries.length : 0;
+
+  return trendSeries.map((entry) => ({
+    label: entry.label,
+    transactionCount: countByBucket.get(entry.bucketDate.toISOString()) || 0,
+    averageTransactionCount: Number(averageCount.toFixed(2)),
+  }));
+};
+
 const getRangeMeta = (rangeType, granularity) => {
   const labelsByRange = {
     today: 'Today',
@@ -660,6 +683,7 @@ export const getDashboardAnalytics = (rangeType = 'month', customStart = null, c
     name: mode,
     value: Math.round(paymentSpend[mode]),
   }));
+  const transactionCountSeries = buildTransactionCountSeries(filtered, trendSeries, granularity);
 
   const forecastResult = buildForecastFromTrendSeries(trendSeries, granularity);
   const recentTimeline = filtered.slice(0, 8).map((expense) => ({
@@ -695,6 +719,7 @@ export const getDashboardAnalytics = (rangeType = 'month', customStart = null, c
       distributionSeries: distributionData,
       topSubCategories,
       paymentModeAnalysis: paymentModeData,
+      transactionCountComparison: transactionCountSeries,
       spendingForecast: forecastResult.forecastData,
       spendingForecastMeta: forecastResult.meta,
       recentTimeline,

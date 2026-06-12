@@ -9,6 +9,7 @@ import {
   BarChart, 
   Bar, 
   Cell, 
+  ComposedChart,
   PieChart, 
   Pie, 
   Legend, 
@@ -575,6 +576,46 @@ function Dashboard({ categories, departments, showToast }) {
                 />
                 <Legend layout="horizontal" align="center" verticalAlign="bottom" iconSize={8} wrapperStyle={{ fontSize: 10 }} />
               </PieChart>
+            )}
+          </ChartSurface>
+        </div>
+
+        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <h3 style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Transaction Count vs Average</h3>
+          <ChartSurface minHeight={240}>
+            {({ width, height }) => (
+              <ComposedChart
+                width={width}
+                height={height}
+                data={charts.transactionCountComparison}
+                margin={{ top: 10, right: 10, left: 10, bottom: 0 }}
+                key={`${currentTheme}-transactions`}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} vertical={false} />
+                <XAxis dataKey="label" stroke={chartTheme.textMuted} fontSize={11} tickLine={false} />
+                <YAxis stroke={chartTheme.textMuted} fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
+                <Tooltip
+                  contentStyle={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '4px' }}
+                  formatter={(value, name) => {
+                    if (name === 'transactionCount') {
+                      return [value, 'Transaction Count'];
+                    }
+
+                    return [Number(value).toFixed(2), 'Average Transaction Count'];
+                  }}
+                />
+                <Legend layout="horizontal" align="center" verticalAlign="bottom" iconSize={8} wrapperStyle={{ fontSize: 10 }} />
+                <Bar dataKey="transactionCount" name="Transaction Count" fill={chartTheme.primary} radius={[4, 4, 0, 0]} />
+                <Line
+                  type="monotone"
+                  dataKey="averageTransactionCount"
+                  name="Average Transaction Count"
+                  stroke={chartTheme.secondary}
+                  strokeWidth={2}
+                  dot={false}
+                  strokeDasharray="5 4"
+                />
+              </ComposedChart>
             )}
           </ChartSurface>
         </div>
