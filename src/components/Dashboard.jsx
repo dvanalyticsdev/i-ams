@@ -29,6 +29,7 @@ import {
   RefreshCw,
   FileText
 } from 'lucide-react';
+import { getExpenses } from '../services/expenseService';
 import { getDashboardAnalytics } from '../services/expenseService';
 
 function ChartSurface({ minHeight, children }) {
@@ -85,21 +86,61 @@ function ChartSurface({ minHeight, children }) {
   );
 }
 
-function Dashboard({ showToast }) {
+function Dashboard({ categories, departments, showToast }) {
   const [rangeType, setRangeType] = useState('month');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [filterCategory, setFilterCategory] = useState('');
+  const [filterSubCategory, setFilterSubCategory] = useState('');
+  const [filterExpenseBy, setFilterExpenseBy] = useState('');
+  const [filterDept, setFilterDept] = useState('');
+  const [filterPaymentMode, setFilterPaymentMode] = useState('');
+  const [filterMinAmount, setFilterMinAmount] = useState('');
+  const [filterMaxAmount, setFilterMaxAmount] = useState('');
   const [analytics, setAnalytics] = useState(null);
   const [currentTheme, setCurrentTheme] = useState('light');
+  const expenses = getExpenses();
+  const categoryNames = Object.keys(categories);
+  const availableSubCategories = filterCategory ? (categories[filterCategory] || []) : [];
+  const expenseByOptions = [...new Set(
+    expenses
+      .map((expense) => String(expense.employeeName || '').trim())
+      .filter(Boolean)
+  )].sort((a, b) => a.localeCompare(b));
+  const paymentModeOptions = [...new Set(
+    expenses
+      .map((expense) => String(expense.paymentMode || '').trim())
+      .filter(Boolean)
+  )].sort((a, b) => a.localeCompare(b));
 
   const fetchAnalytics = () => {
-    const data = getDashboardAnalytics(rangeType, startDate, endDate);
+    const data = getDashboardAnalytics(rangeType, startDate, endDate, {
+      category: filterCategory,
+      subCategory: filterSubCategory,
+      expenseBy: filterExpenseBy,
+      department: filterDept,
+      paymentMode: filterPaymentMode,
+      minAmount: filterMinAmount,
+      maxAmount: filterMaxAmount,
+    });
     setAnalytics(data);
   };
 
   useEffect(() => {
     fetchAnalytics();
-  }, [rangeType, startDate, endDate]);
+  }, [rangeType, startDate, endDate, filterCategory, filterSubCategory, filterExpenseBy, filterDept, filterPaymentMode, filterMinAmount, filterMaxAmount]);
+
+  useEffect(() => {
+    if (filterCategory && !categories[filterCategory]) {
+      setFilterCategory('');
+      setFilterSubCategory('');
+      return;
+    }
+
+    if (filterSubCategory && filterCategory && !categories[filterCategory]?.includes(filterSubCategory)) {
+      setFilterSubCategory('');
+    }
+  }, [categories, filterCategory, filterSubCategory]);
 
   useEffect(() => {
     const observer = new MutationObserver(() => {
@@ -127,7 +168,7 @@ function Dashboard({ showToast }) {
     );
   }
 
-  const { kpis, charts } = analytics;
+  const { kpis, charts, meta } = analytics;
 
   const getThemeColors = () => {
     const isDark = currentTheme === 'dark';
@@ -168,6 +209,20 @@ function Dashboard({ showToast }) {
     showToast("Applied custom date range filter", "success");
   };
 
+  const handleResetFilters = () => {
+    setRangeType('month');
+    setStartDate('');
+    setEndDate('');
+    setFilterCategory('');
+    setFilterSubCategory('');
+    setFilterExpenseBy('');
+    setFilterDept('');
+    setFilterPaymentMode('');
+    setFilterMinAmount('');
+    setFilterMaxAmount('');
+    showToast('Dashboard filters cleared', 'success');
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
       {/* FILTER BAR CONTAINER */}
@@ -175,36 +230,87 @@ function Dashboard({ showToast }) {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Filter size={16} style={{ color: 'var(--primary)' }} />
-            <span style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Filter Timeframe</span>
+            <span style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Dashboard Filters</span>
+          </div>
+          <button type="button" className="btn btn-secondary" onClick={handleResetFilters} style={{ fontSize: '12px' }}>
+            Reset Filters
+          </button>
+        </div>
+
+        <div className="filter-grid" style={{ borderTop: '1px solid var(--border)', paddingTop: '10px' }}>
+          <div>
+            <label>Timeline</label>
+            <select value={rangeType} onChange={(event) => setRangeType(event.target.value)}>
+              <option value="today">Today</option>
+              <option value="currentWeek">This Week</option>
+              <option value="week">Last 7 Days</option>
+              <option value="currentMonth">This Month</option>
+              <option value="month">Last 30 Days</option>
+              <option value="3months">Last 90 Days</option>
+              <option value="6months">Last 6 Months</option>
+              <option value="ytd">Year to Date</option>
+              <option value="custom">Custom Range</option>
+            </select>
           </div>
 
-          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-            {[
-              { id: 'today', label: 'Today' },
-              { id: 'currentWeek', label: 'This Week' },
-              { id: 'week', label: 'Last 7 Days' },
-              { id: 'currentMonth', label: 'This Month' },
-              { id: 'month', label: 'Last 30 Days' },
-              { id: '3months', label: 'Last 90 Days' },
-              { id: '6months', label: 'Last 6 Months' },
-              { id: 'ytd', label: 'Year to Date' },
-              { id: 'custom', label: 'Custom Range' }
-            ].map(btn => (
-              <button 
-                key={btn.id}
-                onClick={() => setRangeType(btn.id)}
-                className="btn"
-                style={{
-                  fontSize: '11px',
-                  padding: '5px 10px',
-                  backgroundColor: rangeType === btn.id ? 'var(--primary)' : 'var(--surface-muted)',
-                  color: rangeType === btn.id ? '#ffffff' : 'var(--text)',
-                  borderColor: rangeType === btn.id ? 'var(--primary)' : 'var(--border)'
-                }}
-              >
-                {btn.label}
-              </button>
-            ))}
+          <div>
+            <label>Category</label>
+            <select value={filterCategory} onChange={(event) => { setFilterCategory(event.target.value); setFilterSubCategory(''); }}>
+              <option value="">All Categories</option>
+              {categoryNames.map((categoryName) => (
+                <option key={categoryName} value={categoryName}>{categoryName}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label>Sub-Category</label>
+            <select value={filterSubCategory} onChange={(event) => setFilterSubCategory(event.target.value)} disabled={!filterCategory}>
+              <option value="">All Sub-Categories</option>
+              {availableSubCategories.map((subCategory) => (
+                <option key={subCategory} value={subCategory}>{subCategory}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label>Expense By</label>
+            <select value={filterExpenseBy} onChange={(event) => setFilterExpenseBy(event.target.value)}>
+              <option value="">All People</option>
+              {expenseByOptions.map((expenseBy) => (
+                <option key={expenseBy} value={expenseBy}>{expenseBy}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label>Department</label>
+            <select value={filterDept} onChange={(event) => setFilterDept(event.target.value)}>
+              <option value="">All Departments</option>
+              {departments.map((department) => (
+                <option key={department} value={department}>{department}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label>Payment Mode</label>
+            <select value={filterPaymentMode} onChange={(event) => setFilterPaymentMode(event.target.value)}>
+              <option value="">All Modes</option>
+              {paymentModeOptions.map((mode) => (
+                <option key={mode} value={mode}>{mode}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label>Min Amount</label>
+            <input type="number" placeholder="Min amount" value={filterMinAmount} onChange={(event) => setFilterMinAmount(event.target.value)} />
+          </div>
+
+          <div>
+            <label>Max Amount</label>
+            <input type="number" placeholder="Max amount" value={filterMaxAmount} onChange={(event) => setFilterMaxAmount(event.target.value)} />
           </div>
         </div>
 
@@ -238,25 +344,25 @@ function Dashboard({ showToast }) {
           </div>
         </div>
 
-        {/* KPI 2: Monthly Expenses */}
+        {/* KPI 2: Previous Period Spend */}
         <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
           <div style={{ padding: '10px', backgroundColor: 'var(--accent-soft)', borderRadius: 'var(--radius-sm)', color: 'var(--accent)' }}>
             <Calendar size={20} />
           </div>
           <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>This Month Spend</span>
-            <span style={{ fontSize: '18px', fontWeight: 700, marginTop: '2px' }}>{formatCurrency(kpis.monthlyExpenses)}</span>
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>{meta.previousPeriodLabel}</span>
+            <span style={{ fontSize: '18px', fontWeight: 700, marginTop: '2px' }}>{formatCurrency(kpis.previousPeriodSpend)}</span>
           </div>
         </div>
 
-        {/* KPI 3: Today's Expenses */}
+        {/* KPI 3: Latest Bucket Spend */}
         <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
           <div style={{ padding: '10px', backgroundColor: 'var(--accent-soft)', borderRadius: 'var(--radius-sm)', color: 'var(--accent)' }}>
             <Clock size={20} />
           </div>
           <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Today's Spend</span>
-            <span style={{ fontSize: '18px', fontWeight: 700, marginTop: '2px' }}>{formatCurrency(kpis.todayExpenses)}</span>
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>{meta.latestBucketLabel}</span>
+            <span style={{ fontSize: '18px', fontWeight: 700, marginTop: '2px' }}>{formatCurrency(kpis.latestBucketSpend)}</span>
           </div>
         </div>
 
@@ -321,7 +427,7 @@ function Dashboard({ showToast }) {
             {kpis.growthRate <= 0 ? <ArrowDownRight size={20} /> : <ArrowUpRight size={20} />}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>MoM Growth Rate</span>
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>{meta.growthLabel}</span>
             <span style={{ fontSize: '18px', fontWeight: 700, marginTop: '2px', color: kpis.growthRate <= 0 ? 'var(--success)' : 'var(--danger)' }}>
               {kpis.growthRate > 0 ? `+${kpis.growthRate}` : kpis.growthRate}%
             </span>
@@ -345,14 +451,14 @@ function Dashboard({ showToast }) {
 
       {/* CHARTS CONTAINER */}
       <div className="grid-2">
-        {/* Chart 1: Monthly Expense Trend */}
+        {/* Chart 1: Dynamic Expense Trend */}
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <h3 style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Monthly Spend Trend</h3>
+          <h3 style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{meta.trendTitle}</h3>
           <ChartSurface minHeight={240}>
             {({ width, height }) => (
-              <LineChart width={width} height={height} data={charts.monthlyTrend} margin={{ top: 10, right: 10, left: 10, bottom: 0 }} key={currentTheme}>
+              <LineChart width={width} height={height} data={charts.trendSeries} margin={{ top: 10, right: 10, left: 10, bottom: 0 }} key={currentTheme}>
                 <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} />
-                <XAxis dataKey="month" stroke={chartTheme.textMuted} fontSize={11} tickLine={false} />
+                <XAxis dataKey="label" stroke={chartTheme.textMuted} fontSize={11} tickLine={false} />
                 <YAxis stroke={chartTheme.textMuted} fontSize={11} tickLine={false} axisLine={false} tickFormatter={v => `₹${v/1000}k`} />
                 <Tooltip 
                   contentStyle={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '4px' }}
@@ -419,14 +525,14 @@ function Dashboard({ showToast }) {
           </ChartSurface>
         </div>
 
-        {/* Chart 4: Weekly Expense Comparison */}
+        {/* Chart 4: Dynamic Expense Distribution */}
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <h3 style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Weekly Expense Distribution</h3>
+          <h3 style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{meta.distributionTitle}</h3>
           <ChartSurface minHeight={240}>
             {({ width, height }) => (
-              <AreaChart width={width} height={height} data={charts.weeklySpend} margin={{ top: 10, right: 10, left: 10, bottom: 0 }} key={currentTheme}>
+              <AreaChart width={width} height={height} data={charts.distributionSeries} margin={{ top: 10, right: 10, left: 10, bottom: 0 }} key={currentTheme}>
                 <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} />
-                <XAxis dataKey="day" stroke={chartTheme.textMuted} fontSize={11} tickLine={false} />
+                <XAxis dataKey="label" stroke={chartTheme.textMuted} fontSize={11} tickLine={false} />
                 <YAxis stroke={chartTheme.textMuted} fontSize={11} tickLine={false} axisLine={false} tickFormatter={v => `₹${v/1000}k`} />
                 <Tooltip 
                   contentStyle={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '4px' }}
@@ -496,7 +602,7 @@ function Dashboard({ showToast }) {
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '14px', gridColumn: '1 / -1' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
             <div>
-              <h3 style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Monthly Spending Forecast</h3>
+              <h3 style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{meta.forecastTitle}</h3>
               <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
                 {charts.spendingForecastMeta.method} · {charts.spendingForecastMeta.note}
               </div>
@@ -520,7 +626,7 @@ function Dashboard({ showToast }) {
             {({ width, height }) => (
               <AreaChart width={width} height={height} data={charts.spendingForecast} margin={{ top: 12, right: 18, left: 12, bottom: 8 }} key={currentTheme}>
                 <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} />
-                <XAxis dataKey="month" stroke={chartTheme.textMuted} fontSize={11} tickLine={false} />
+                <XAxis dataKey="label" stroke={chartTheme.textMuted} fontSize={11} tickLine={false} />
                 <YAxis stroke={chartTheme.textMuted} fontSize={11} tickLine={false} axisLine={false} tickFormatter={v => `₹${v/1000}k`} />
                 <Tooltip 
                   contentStyle={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '4px' }}

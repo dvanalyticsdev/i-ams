@@ -155,61 +155,297 @@ export const deleteExpensesByImportBatch = async (importBatchId) => {
   return result.removedCount || 0;
 };
 
-const filterByDateRange = (data, rangeType, customStart = null, customEnd = null) => {
-  const today = new Date();
-  today.setHours(23, 59, 59, 999);
+const monthNamesShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const dayNamesShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-  let start = new Date();
-  start.setHours(0, 0, 0, 0);
+const startOfDay = (value) => {
+  const date = new Date(value);
+  date.setHours(0, 0, 0, 0);
+  return date;
+};
+
+const endOfDay = (value) => {
+  const date = new Date(value);
+  date.setHours(23, 59, 59, 999);
+  return date;
+};
+
+const startOfWeek = (value) => {
+  const date = startOfDay(value);
+  const dayOfWeek = date.getDay();
+  const diffToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+  date.setDate(date.getDate() - diffToMonday);
+  return date;
+};
+
+const startOfMonth = (value) => new Date(value.getFullYear(), value.getMonth(), 1);
+
+const getDateRangeBounds = (rangeType, customStart = null, customEnd = null) => {
+  const today = endOfDay(new Date());
+  let start = startOfDay(new Date());
+  let end = new Date(today);
 
   switch (rangeType) {
     case 'today':
       break;
-    case 'currentWeek': {
-      const dayOfWeek = start.getDay();
-      const diffToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-      start.setDate(start.getDate() - diffToMonday);
+    case 'currentWeek':
+      start = startOfWeek(new Date());
       break;
-    }
     case 'week':
-      start.setDate(today.getDate() - 7);
+      start.setDate(start.getDate() - 6);
       break;
     case 'currentMonth':
-      start = new Date(today.getFullYear(), today.getMonth(), 1);
+      start = startOfMonth(new Date());
       break;
     case 'month':
-      start.setMonth(today.getMonth() - 1);
+      start.setDate(start.getDate() - 29);
       break;
     case '3months':
-      start.setMonth(today.getMonth() - 3);
+      start.setMonth(start.getMonth() - 2);
+      start = startOfMonth(start);
       break;
     case '6months':
-      start.setMonth(today.getMonth() - 6);
+      start.setMonth(start.getMonth() - 5);
+      start = startOfMonth(start);
       break;
     case 'ytd':
       start = new Date(today.getFullYear(), 0, 1);
       break;
     case 'custom':
-      if (customStart) start = new Date(customStart);
+      if (customStart) {
+        start = startOfDay(new Date(customStart));
+      }
       if (customEnd) {
-        today.setTime(new Date(customEnd).getTime());
-        today.setHours(23, 59, 59, 999);
+        end = endOfDay(new Date(customEnd));
       }
       break;
     default:
-      start.setMonth(today.getMonth() - 1);
+      start.setDate(start.getDate() - 29);
   }
 
+  return { start, end };
+};
+
+const filterByDateRange = (data, rangeType, customStart = null, customEnd = null) => {
+  const { start, end } = getDateRangeBounds(rangeType, customStart, customEnd);
   return data.filter((item) => {
     const itemDate = new Date(item.date);
-    return itemDate >= start && itemDate <= today;
+    return itemDate >= start && itemDate <= end;
   });
 };
 
-const buildForecastFromMonthlyTrend = (monthlyTrendData, monthNames) => {
-  if (monthlyTrendData.length < 4) {
+const applyDashboardFilters = (data, filters = {}) => {
+  const {
+    category = '',
+    subCategory = '',
+    expenseBy = '',
+    department = '',
+    paymentMode = '',
+    minAmount = '',
+    maxAmount = '',
+  } = filters;
+
+  return data.filter((expense) => {
+    if (category && expense.category !== category) {
+      return false;
+    }
+
+    if (subCategory && expense.subCategory !== subCategory) {
+      return false;
+    }
+
+    if (expenseBy && String(expense.employeeName || '') !== expenseBy) {
+      return false;
+    }
+
+    if (department && String(expense.department || '') !== department) {
+      return false;
+    }
+
+    if (paymentMode && String(expense.paymentMode || '') !== paymentMode) {
+      return false;
+    }
+
+    if (minAmount !== '' && Number(expense.amount) < Number(minAmount)) {
+      return false;
+    }
+
+    if (maxAmount !== '' && Number(expense.amount) > Number(maxAmount)) {
+      return false;
+    }
+
+    return true;
+  });
+};
+
+const detectTrendGranularity = (rangeType, start, end) => {
+  if (rangeType === 'today') {
+    return 'hour';
+  }
+
+  if (rangeType === 'currentWeek' || rangeType === 'week') {
+    return 'day';
+  }
+
+  if (rangeType === 'currentMonth' || rangeType === 'month') {
+    return 'day';
+  }
+
+  if (rangeType === '3months') {
+    return 'week';
+  }
+
+  if (rangeType === '6months' || rangeType === 'ytd') {
+    return 'month';
+  }
+
+  const spanDays = Math.max(1, Math.ceil((end - start) / (24 * 60 * 60 * 1000)));
+  if (spanDays <= 2) {
+    return 'hour';
+  }
+  if (spanDays <= 45) {
+    return 'day';
+  }
+  if (spanDays <= 180) {
+    return 'week';
+  }
+  return 'month';
+};
+
+const getBucketStart = (value, granularity) => {
+  const date = new Date(value);
+
+  switch (granularity) {
+    case 'hour':
+      date.setMinutes(0, 0, 0);
+      return date;
+    case 'day':
+      return startOfDay(date);
+    case 'week':
+      return startOfWeek(date);
+    case 'month':
+      return startOfMonth(date);
+    default:
+      return startOfDay(date);
+  }
+};
+
+const addBucket = (value, granularity, step = 1) => {
+  const date = new Date(value);
+
+  switch (granularity) {
+    case 'hour':
+      date.setHours(date.getHours() + step);
+      break;
+    case 'day':
+      date.setDate(date.getDate() + step);
+      break;
+    case 'week':
+      date.setDate(date.getDate() + (step * 7));
+      break;
+    case 'month':
+      date.setMonth(date.getMonth() + step);
+      break;
+    default:
+      date.setDate(date.getDate() + step);
+  }
+
+  return date;
+};
+
+const formatBucketLabel = (bucketDate, granularity) => {
+  const date = new Date(bucketDate);
+
+  switch (granularity) {
+    case 'hour':
+      return `${String(date.getHours()).padStart(2, '0')}:00`;
+    case 'day':
+      return `${String(date.getDate()).padStart(2, '0')} ${monthNamesShort[date.getMonth()]}`;
+    case 'week': {
+      const weekEnd = addBucket(date, 'day', 6);
+      return `${String(date.getDate()).padStart(2, '0')} ${monthNamesShort[date.getMonth()]} - ${String(weekEnd.getDate()).padStart(2, '0')} ${monthNamesShort[weekEnd.getMonth()]}`;
+    }
+    case 'month':
+      return `${monthNamesShort[date.getMonth()]} ${date.getFullYear().toString().slice(-2)}`;
+    default:
+      return `${String(date.getDate()).padStart(2, '0')} ${monthNamesShort[date.getMonth()]}`;
+  }
+};
+
+const buildTrendSeries = (expenses, start, end, granularity) => {
+  const normalizedStart = getBucketStart(start, granularity);
+  const bucketMap = new Map();
+  const series = [];
+
+  for (let cursor = new Date(normalizedStart); cursor <= end; cursor = addBucket(cursor, granularity, 1)) {
+    const key = cursor.toISOString();
+    bucketMap.set(key, {
+      label: formatBucketLabel(cursor, granularity),
+      bucketDate: new Date(cursor),
+      spend: 0,
+    });
+    series.push(bucketMap.get(key));
+  }
+
+  expenses.forEach((expense) => {
+    const expenseDate = new Date(expense.date);
+    const bucketDate = getBucketStart(expenseDate, granularity);
+    const key = bucketDate.toISOString();
+    if (bucketMap.has(key)) {
+      bucketMap.get(key).spend += expense.amount;
+    }
+  });
+
+  return series.map((entry) => ({
+    label: entry.label,
+    bucketDate: entry.bucketDate,
+    spend: Math.round(entry.spend),
+  }));
+};
+
+const getRangeMeta = (rangeType, granularity) => {
+  const labelsByRange = {
+    today: 'Today',
+    currentWeek: 'This Week',
+    week: 'Last 7 Days',
+    currentMonth: 'This Month',
+    month: 'Last 30 Days',
+    '3months': 'Last 90 Days',
+    '6months': 'Last 6 Months',
+    ytd: 'Year to Date',
+    custom: 'Custom Range',
+  };
+
+  const groupLabelByGranularity = {
+    hour: 'Hourly',
+    day: 'Daily',
+    week: 'Weekly',
+    month: 'Monthly',
+  };
+
+  const forecastUnitByGranularity = {
+    hour: 'hours',
+    day: 'days',
+    week: 'weeks',
+    month: 'months',
+  };
+
+  return {
+    timelineLabel: labelsByRange[rangeType] || 'Selected Range',
+    trendTitle: `${groupLabelByGranularity[granularity]} Spend Trend`,
+    distributionTitle: `${groupLabelByGranularity[granularity]} Spend Distribution`,
+    forecastTitle: `${groupLabelByGranularity[granularity]} Spending Forecast`,
+    growthLabel: `${groupLabelByGranularity[granularity]} Growth`,
+    latestBucketLabel: `Latest ${groupLabelByGranularity[granularity].replace('ly', '')} Spend`,
+    previousPeriodLabel: 'Previous Matching Period',
+    forecastUnit: forecastUnitByGranularity[granularity],
+  };
+};
+
+const buildForecastFromTrendSeries = (trendSeries, granularity) => {
+  if (trendSeries.length < 4) {
     return {
-      forecastData: monthlyTrendData.map((item) => ({
+      forecastData: trendSeries.map((item) => ({
         ...item,
         actualSpend: item.spend,
         projectedSpend: null,
@@ -218,12 +454,12 @@ const buildForecastFromMonthlyTrend = (monthlyTrendData, monthNames) => {
         method: 'Insufficient history',
         confidence: 'Low',
         mape: null,
-        note: 'Need at least 4 months of history for a stronger forecast.',
+        note: 'Need at least 4 timeline buckets of history for a stronger forecast.',
       },
     };
   }
 
-  const values = monthlyTrendData.map((item) => item.spend);
+  const values = trendSeries.map((item) => item.spend);
   const parameterOptions = [0.2, 0.35, 0.5, 0.65, 0.8];
   let bestModel = null;
 
@@ -267,28 +503,35 @@ const buildForecastFromMonthlyTrend = (monthlyTrendData, monthNames) => {
     }
   }
 
-  const forecastData = monthlyTrendData.map((item) => ({
+  const forecastData = trendSeries.map((item) => ({
     ...item,
     actualSpend: item.spend,
     projectedSpend: null,
   }));
-  const lastKnownDate = new Date();
+  const horizonByGranularity = {
+    hour: 6,
+    day: 7,
+    week: 6,
+    month: 4,
+  };
+  const horizon = horizonByGranularity[granularity] || 4;
   const confidenceMultiplier = 1.28;
-  const lastActualPoint = monthlyTrendData[monthlyTrendData.length - 1];
+  const lastActualPoint = trendSeries[trendSeries.length - 1];
+  const lastKnownDate = lastActualPoint.bucketDate;
 
   forecastData[forecastData.length - 1] = {
     ...forecastData[forecastData.length - 1],
     projectedSpend: lastActualPoint.spend,
   };
 
-  for (let step = 1; step <= 4; step += 1) {
-    const nextDate = new Date(lastKnownDate);
-    nextDate.setMonth(nextDate.getMonth() + step);
+  for (let step = 1; step <= horizon; step += 1) {
+    const nextDate = addBucket(lastKnownDate, granularity, step);
     const projectedValue = Math.max(0, bestModel.level + step * bestModel.trend);
     const varianceBand = bestModel.rmse * confidenceMultiplier * Math.sqrt(step);
 
     forecastData.push({
-      month: `${monthNames[nextDate.getMonth()]} ${nextDate.getFullYear().toString().slice(-2)}`,
+      label: formatBucketLabel(nextDate, granularity),
+      bucketDate: nextDate,
       spend: Math.round(projectedValue),
       actualSpend: null,
       projectedSpend: Math.round(projectedValue),
@@ -316,25 +559,14 @@ const buildForecastFromMonthlyTrend = (monthlyTrendData, monthNames) => {
   };
 };
 
-export const getDashboardAnalytics = (rangeType = 'month', customStart = null, customEnd = null) => {
+export const getDashboardAnalytics = (rangeType = 'month', customStart = null, customEnd = null, filters = {}) => {
   const allExpenses = getExpenses();
-  const filtered = filterByDateRange(allExpenses, rangeType, customStart, customEnd);
+  const filteredBase = applyDashboardFilters(allExpenses, filters);
+  const { start, end } = getDateRangeBounds(rangeType, customStart, customEnd);
+  const filtered = filterByDateRange(filteredBase, rangeType, customStart, customEnd);
+  const granularity = detectTrendGranularity(rangeType, start, end);
+  const rangeMeta = getRangeMeta(rangeType, granularity);
   const totalSpend = filtered.reduce((sum, expense) => sum + expense.amount, 0);
-
-  const currentMonth = new Date().getMonth();
-  const currentYear = new Date().getFullYear();
-  const monthlyExpenses = allExpenses
-    .filter((expense) => {
-      const date = new Date(expense.date);
-      return date.getMonth() === currentMonth && date.getFullYear() === currentYear;
-    })
-    .reduce((sum, expense) => sum + expense.amount, 0);
-
-  const todayStr = new Date().toISOString().split('T')[0];
-  const todayExpenses = allExpenses
-    .filter((expense) => expense.date === todayStr)
-    .reduce((sum, expense) => sum + expense.amount, 0);
-
   const avgExpenseValue = filtered.length ? totalSpend / filtered.length : 0;
 
   const categorySpend = {};
@@ -372,45 +604,23 @@ export const getDashboardAnalytics = (rangeType = 'month', customStart = null, c
     }
   });
 
-  const prevMonthDate = new Date();
-  prevMonthDate.setMonth(prevMonthDate.getMonth() - 1);
-  const prevMonth = prevMonthDate.getMonth();
-  const prevMonthYear = prevMonthDate.getFullYear();
-
-  const prevMonthSpend = allExpenses
+  const rangeDurationMs = Math.max(24 * 60 * 60 * 1000, end.getTime() - start.getTime() + 1);
+  const previousPeriodEnd = new Date(start.getTime() - 1);
+  const previousPeriodStart = new Date(previousPeriodEnd.getTime() - rangeDurationMs + 1);
+  const previousPeriodSpend = filteredBase
     .filter((expense) => {
-      const date = new Date(expense.date);
-      return date.getMonth() === prevMonth && date.getFullYear() === prevMonthYear;
+      const expenseDate = new Date(expense.date);
+      return expenseDate >= previousPeriodStart && expenseDate <= previousPeriodEnd;
     })
     .reduce((sum, expense) => sum + expense.amount, 0);
 
   let growthRate = 0;
-  if (prevMonthSpend > 0) {
-    growthRate = ((monthlyExpenses - prevMonthSpend) / prevMonthSpend) * 100;
+  if (previousPeriodSpend > 0) {
+    growthRate = ((totalSpend - previousPeriodSpend) / previousPeriodSpend) * 100;
   }
 
-  const monthlyTrendData = [];
-  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-  for (let i = 11; i >= 0; i -= 1) {
-    const date = new Date();
-    date.setMonth(date.getMonth() - i);
-    const month = date.getMonth();
-    const year = date.getFullYear();
-    const label = `${monthNames[month]} ${year.toString().slice(-2)}`;
-
-    const monthSpend = allExpenses
-      .filter((expense) => {
-        const expenseDate = new Date(expense.date);
-        return expenseDate.getMonth() === month && expenseDate.getFullYear() === year;
-      })
-      .reduce((sum, expense) => sum + expense.amount, 0);
-
-    monthlyTrendData.push({
-      month: label,
-      spend: Math.round(monthSpend),
-    });
-  }
+  const trendSeries = buildTrendSeries(filtered, start, end, granularity);
+  const latestBucketSpend = trendSeries.length ? trendSeries[trendSeries.length - 1].spend : 0;
 
   const categoryData = Object.keys(categorySpend)
     .map((category) => ({
@@ -426,21 +636,7 @@ export const getDashboardAnalytics = (rangeType = 'month', customStart = null, c
     }))
     .sort((a, b) => b.spend - a.spend);
 
-  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const weeklyDataMap = {};
-  dayNames.forEach((day) => {
-    weeklyDataMap[day] = 0;
-  });
-
-  filtered.forEach((expense) => {
-    const dayName = dayNames[new Date(expense.date).getDay()];
-    weeklyDataMap[dayName] += expense.amount;
-  });
-
-  const weeklyData = dayNames.map((day) => ({
-    day: day.slice(0, 3),
-    spend: Math.round(weeklyDataMap[day]),
-  }));
+  const distributionData = [...trendSeries];
 
   const subCategorySpend = {};
   filtered.forEach((expense) => {
@@ -465,7 +661,7 @@ export const getDashboardAnalytics = (rangeType = 'month', customStart = null, c
     value: Math.round(paymentSpend[mode]),
   }));
 
-  const forecastResult = buildForecastFromMonthlyTrend(monthlyTrendData, monthNames);
+  const forecastResult = buildForecastFromTrendSeries(trendSeries, granularity);
   const recentTimeline = filtered.slice(0, 8).map((expense) => ({
     id: expense.expenseId,
     date: expense.date,
@@ -480,8 +676,8 @@ export const getDashboardAnalytics = (rangeType = 'month', customStart = null, c
   return {
     kpis: {
       totalSpend: Math.round(totalSpend),
-      monthlyExpenses: Math.round(monthlyExpenses),
-      todayExpenses: Math.round(todayExpenses),
+      previousPeriodSpend: Math.round(previousPeriodSpend),
+      latestBucketSpend: Math.round(latestBucketSpend),
       avgExpenseValue: Math.round(avgExpenseValue),
       highestCategory: highestCategory.name,
       highestCategoryAmount: Math.round(highestCategory.amount),
@@ -493,15 +689,16 @@ export const getDashboardAnalytics = (rangeType = 'month', customStart = null, c
       growthRate: parseFloat(growthRate.toFixed(2)),
     },
     charts: {
-      monthlyTrend: monthlyTrendData,
+      trendSeries,
       categoryBreakdown: categoryData,
       departmentSpend: departmentData,
-      weeklySpend: weeklyData,
+      distributionSeries: distributionData,
       topSubCategories,
       paymentModeAnalysis: paymentModeData,
       spendingForecast: forecastResult.forecastData,
       spendingForecastMeta: forecastResult.meta,
       recentTimeline,
     },
+    meta: rangeMeta,
   };
 };

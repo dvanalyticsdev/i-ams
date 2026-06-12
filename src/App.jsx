@@ -295,7 +295,11 @@ function App() {
         {/* CONTENT AREA */}
         <main className="content-area">
           {activeTab === 'dashboard' ? (
-            <Dashboard showToast={showToast} />
+            <Dashboard
+              categories={categories}
+              departments={departments}
+              showToast={showToast}
+            />
           ) : activeTab === 'categories' ? (
             <CategoryManagement
               categories={categories}
