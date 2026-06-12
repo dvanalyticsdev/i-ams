@@ -472,6 +472,26 @@ function ExpenseTracker({ categories, showToast }) {
   };
 
   const normalizeHeader = (header) => String(header).trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+  const monthHeaderPattern = /^[A-Za-z]{3}\/\d{2}$/;
+  const buildNormalizedCategoryMaps = () => {
+    const normalizedCategoryLookup = new Map();
+    const normalizedSubCategoryLookup = new Map();
+
+    Object.entries(categories).forEach(([categoryName, subCategoryList]) => {
+      normalizedCategoryLookup.set(normalizeHeader(categoryName), categoryName);
+      (subCategoryList || []).forEach((subCategoryName) => {
+        normalizedSubCategoryLookup.set(normalizeHeader(subCategoryName), {
+          category: categoryName,
+          subCategory: subCategoryName
+        });
+      });
+    });
+
+    return {
+      normalizedCategoryLookup,
+      normalizedSubCategoryLookup
+    };
+  };
 
   const resolveDateValue = (value) => {
     if (!value) {
@@ -495,6 +515,210 @@ function ExpenseTracker({ categories, showToast }) {
     }
 
     return '';
+  };
+
+  const resolveMonthHeaderDate = (header) => {
+    const [monthName, yearSuffix] = String(header).trim().split('/');
+    const monthIndex = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+      .indexOf(monthName.toLowerCase());
+
+    if (monthIndex === -1) {
+      return '';
+    }
+
+    const fullYear = 2000 + Number.parseInt(yearSuffix, 10);
+    if (Number.isNaN(fullYear)) {
+      return '';
+    }
+
+    return new Date(Date.UTC(fullYear, monthIndex, 1)).toISOString().split('T')[0];
+  };
+
+  const resolveCategoryEntry = (label, fallbackCategory = '') => {
+    const { normalizedCategoryLookup, normalizedSubCategoryLookup } = buildNormalizedCategoryMaps();
+    const normalizedLabel = normalizeHeader(label);
+
+    if (normalizedSubCategoryLookup.has(normalizedLabel)) {
+      return normalizedSubCategoryLookup.get(normalizedLabel);
+    }
+
+    if (normalizedCategoryLookup.has(normalizedLabel)) {
+      const category = normalizedCategoryLookup.get(normalizedLabel);
+      return {
+        category,
+        subCategory: categories[category]?.[0] || ''
+      };
+    }
+
+    return {
+      category: fallbackCategory || getDefaultCategorySelection().category,
+      subCategory: String(label || '').trim()
+    };
+  };
+
+  const isLeafDetailLabel = (label) => /^\s*[0-9-]/.test(label);
+  const cleanLeafDetailLabel = (label) => String(label).replace(/^\s*[0-9-]+/, '').trim();
+  const isPlaceholderMonthlyRow = (values) => {
+    const positiveValues = values.filter((value) => Number.isFinite(value) && value > 0);
+    if (!positiveValues.length) {
+      return true;
+    }
+
+    return positiveValues.every((value) => value <= 0.01);
+  };
+
+  const createExpensesFromMonthlyRow = ({
+    row,
+    sheetName,
+    category,
+    subCategory,
+    vendorName = '',
+    employeeName = ''
+  }) => {
+    const expensesFromRow = [];
+    const monthEntries = Object.entries(row).filter(([header]) => monthHeaderPattern.test(String(header).trim()));
+    const isFacultyFee = normalizeHeader(subCategory).startsWith('facultyfees');
+
+    const monthlyValues = monthEntries
+      .map(([, value]) => Number(value))
+      .filter((value) => Number.isFinite(value) && value > 0);
+
+    if (isPlaceholderMonthlyRow(monthlyValues)) {
+      return expensesFromRow;
+    }
+
+    monthEntries.forEach(([header, rawValue]) => {
+      const amount = Number(rawValue);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        return;
+      }
+
+      expensesFromRow.push({
+        expenseId: '',
+        date: resolveMonthHeaderDate(header) || getTodayDate(),
+        category,
+        subCategory,
+        amount,
+        paymentMode: PAYMENT_MODES[0],
+        vendorName: isFacultyFee ? '' : vendorName,
+        department: DEPARTMENTS[0],
+        employeeName: isFacultyFee ? (employeeName || vendorName) : employeeName,
+        description: `Imported from ${sheetName} - ${String(header).trim()}`,
+        attachment: ''
+      });
+    });
+
+    return expensesFromRow;
+  };
+
+  const mapConsolidatedPLSheet = (rows, sheetName) => {
+    const currentCategories = buildNormalizedCategoryMaps().normalizedCategoryLookup;
+    const startIndex = rows.findIndex((row) => normalizeHeader(row.__EMPTY) === 'expenditure');
+    if (startIndex === -1) {
+      return [];
+    }
+
+    const expensesFromSheet = [];
+    let currentCategory = '';
+    let pendingParent = null;
+    let pendingParentHasChildren = false;
+
+    const flushPendingParent = () => {
+      if (pendingParent && !pendingParentHasChildren) {
+        expensesFromSheet.push(
+          ...createExpensesFromMonthlyRow({
+            row: pendingParent.row,
+            sheetName,
+            category: pendingParent.category,
+            subCategory: pendingParent.subCategory
+          })
+        );
+      }
+
+      pendingParent = null;
+      pendingParentHasChildren = false;
+    };
+
+    for (let index = startIndex + 1; index < rows.length; index += 1) {
+      const row = rows[index];
+      const rawLabel = String(row.__EMPTY || '').trimEnd();
+      const trimmedLabel = rawLabel.trim();
+      const normalizedLabel = normalizeHeader(trimmedLabel);
+
+      if (!trimmedLabel) {
+        flushPendingParent();
+        continue;
+      }
+
+      if (['netprofit', 'ebitda', 'ebitdapercentage', 'ebit', 'ebitpercentage'].includes(normalizedLabel)) {
+        flushPendingParent();
+        break;
+      }
+
+      if (currentCategories.has(normalizedLabel)) {
+        flushPendingParent();
+        currentCategory = currentCategories.get(normalizedLabel);
+        continue;
+      }
+
+      if (!currentCategory) {
+        continue;
+      }
+
+      if (isLeafDetailLabel(rawLabel)) {
+        if (!pendingParent) {
+          continue;
+        }
+
+        pendingParentHasChildren = true;
+        const detailName = cleanLeafDetailLabel(rawLabel);
+        expensesFromSheet.push(
+          ...createExpensesFromMonthlyRow({
+            row,
+            sheetName,
+            category: pendingParent.category,
+            subCategory: pendingParent.subCategory,
+            vendorName: detailName,
+            employeeName: ''
+          })
+        );
+        continue;
+      }
+
+      flushPendingParent();
+      const resolvedEntry = resolveCategoryEntry(trimmedLabel, currentCategory);
+      pendingParent = {
+        row,
+        category: resolvedEntry.category || currentCategory,
+        subCategory: resolvedEntry.subCategory || trimmedLabel
+      };
+    }
+
+    flushPendingParent();
+    return expensesFromSheet;
+  };
+
+  const parseWorkbookExpenses = (workbook) => {
+    for (const sheetName of workbook.SheetNames) {
+      const sheet = workbook.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+      if (!rows.length) {
+        continue;
+      }
+
+      const normalizedHeaders = Object.keys(rows[0] || {}).map(normalizeHeader);
+      const hasFlatExpenseShape = ['amount', 'category'].some((header) => normalizedHeaders.includes(header));
+      if (hasFlatExpenseShape) {
+        return rows.map(mapImportedRow);
+      }
+
+      const consolidatedExpenses = mapConsolidatedPLSheet(rows, sheetName);
+      if (consolidatedExpenses.length) {
+        return consolidatedExpenses;
+      }
+    }
+
+    throw new Error('No importable sheet found in workbook');
   };
 
   const mapImportedRow = (row) => {
@@ -552,16 +776,12 @@ function ExpenseTracker({ categories, showToast }) {
     try {
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: 'array' });
-      const sheetName = workbook.SheetNames[0];
-      const sheet = workbook.Sheets[sheetName];
-      const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
-
-      if (!rows.length) {
-        showToast('Import file is empty', 'warning');
+      const parsedExpenses = parseWorkbookExpenses(workbook);
+      if (!parsedExpenses.length) {
+        showToast('Import file does not contain any importable expense rows', 'warning');
         return;
       }
 
-      const parsedExpenses = rows.map(mapImportedRow);
       await saveExpensesBulk(parsedExpenses, {
         importBatchId: `import-${Date.now()}`,
         importFileName: file.name,
