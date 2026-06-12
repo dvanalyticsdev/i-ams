@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { getInitialTheme, applyTheme } from './theme';
 import { initializeDB } from './services/expenseService';
-import { getExpenseCategories, initializeExpenseCategories } from './services/categories';
+import { getDepartments, getExpenseCategories, initializeDepartments, initializeExpenseCategories } from './services/categories';
 import Dashboard from './components/Dashboard';
 import ExpenseTracker from './components/ExpenseTracker';
 import CategoryManagement from './components/CategoryManagement';
@@ -27,6 +27,7 @@ function App() {
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
   const [toasts, setToasts] = useState([]);
   const [categories, setCategories] = useState(getExpenseCategories());
+  const [departments, setDepartments] = useState(getDepartments());
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const headerMenuRef = useRef(null);
   
@@ -41,8 +42,10 @@ function App() {
       try {
         await initializeDB();
         const initializedCategories = await initializeExpenseCategories();
+        const initializedDepartments = await initializeDepartments();
         if (isMounted) {
           setCategories(initializedCategories);
+          setDepartments(initializedDepartments);
         }
       } catch (error) {
         showToast(`Startup sync failed: ${error.message}`, 'warning');
@@ -296,12 +299,15 @@ function App() {
           ) : activeTab === 'categories' ? (
             <CategoryManagement
               categories={categories}
+              departments={departments}
               onCategoriesChange={setCategories}
+              onDepartmentsChange={setDepartments}
               showToast={showToast}
             />
           ) : (
             <ExpenseTracker
               categories={categories}
+              departments={departments}
               showToast={showToast}
             />
           )}

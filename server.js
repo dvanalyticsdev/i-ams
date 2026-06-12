@@ -9,7 +9,15 @@ const port = Number(process.env.PORT || 4000);
 const mongoUri = process.env.MONGO_URI;
 const dbName = process.env.MONGO_DB_NAME || 'i-ams';
 const categoryDocumentKey = 'expense-categories';
+const departmentDocumentKey = 'expense-departments';
 const isVercel = Boolean(process.env.VERCEL);
+const LEGACY_CATEGORY_KEYS = [
+  'Operation Expenses',
+  'Administration Expenses',
+  'Financial Expenses',
+  'Human Resources Expenses',
+  'Depreciation & Amortization',
+];
 
 const client = mongoUri
   ? new MongoClient(mongoUri, {
@@ -31,6 +39,7 @@ const sanitizeExpense = (expense) => {
     vendorName: String(expense.vendorName || '').trim(),
     department: String(expense.department || '').trim(),
     employeeName: String(expense.employeeName || '').trim(),
+    invoiceNumber: String(expense.invoiceNumber || '').trim(),
     description: String(expense.description || '').trim(),
     attachment: String(expense.attachment || '').trim(),
   };
@@ -66,6 +75,9 @@ const getDefaultCategorySelection = async () => {
 };
 
 const cloneDefaultCategories = () => JSON.parse(JSON.stringify(DEFAULT_EXPENSE_CATEGORIES));
+const cloneDefaultDepartments = () => ['Engineering', 'Marketing', 'Sales', 'HR', 'Finance', 'Operations', 'Legal', 'Customer Support'];
+const shouldMigrateCategoryDocument = (categories = {}) =>
+  Object.keys(categories).some((categoryName) => LEGACY_CATEGORY_KEYS.includes(categoryName));
 
 const normalizeCategories = (categories) =>
   Object.fromEntries(
@@ -76,6 +88,9 @@ const normalizeCategories = (categories) =>
       ])
       .filter(([category]) => Boolean(category))
   );
+
+const normalizeDepartments = (departments) =>
+  [...new Set((departments || []).map((department) => String(department).trim()).filter(Boolean))];
 
 const getExpensesCollection = () => database.collection('expenses');
 const getCategoriesCollection = () => database.collection('settings');
@@ -95,6 +110,7 @@ const initializeDatabase = async () => {
       database = client.db(dbName);
       await getExpensesCollection().createIndex({ expenseId: 1 }, { unique: true });
       await getCategoriesDocument();
+      await getDepartmentsDocument();
       return database;
     })().catch((error) => {
       databaseInitPromise = undefined;
@@ -110,6 +126,28 @@ const getCategoriesDocument = async () => {
   const existing = await collection.findOne({ key: categoryDocumentKey });
 
   if (existing?.categories) {
+    if (shouldMigrateCategoryDocument(existing.categories)) {
+      const defaults = cloneDefaultCategories();
+      await collection.updateOne(
+        { key: categoryDocumentKey },
+        {
+          $set: {
+            categories: defaults,
+            updatedAt: new Date(),
+          },
+          $setOnInsert: {
+            createdAt: new Date(),
+          },
+        },
+        { upsert: true }
+      );
+
+      return {
+        ...existing,
+        categories: defaults,
+      };
+    }
+
     return existing;
   }
 
@@ -137,6 +175,50 @@ const saveCategoriesDocument = async (categories) => {
     {
       $set: {
         categories: normalized,
+        updatedAt: new Date(),
+      },
+      $setOnInsert: {
+        createdAt: new Date(),
+      },
+    },
+    { upsert: true }
+  );
+
+  return normalized;
+};
+
+const getDepartmentsDocument = async () => {
+  const collection = getCategoriesCollection();
+  const existing = await collection.findOne({ key: departmentDocumentKey });
+
+  if (Array.isArray(existing?.departments)) {
+    return existing;
+  }
+
+  const defaults = cloneDefaultDepartments();
+  const nextDocument = {
+    key: departmentDocumentKey,
+    departments: defaults,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+
+  await collection.updateOne(
+    { key: departmentDocumentKey },
+    { $set: nextDocument },
+    { upsert: true }
+  );
+
+  return nextDocument;
+};
+
+const saveDepartmentsDocument = async (departments) => {
+  const normalized = normalizeDepartments(departments);
+  await getCategoriesCollection().updateOne(
+    { key: departmentDocumentKey },
+    {
+      $set: {
+        departments: normalized,
         updatedAt: new Date(),
       },
       $setOnInsert: {
@@ -361,6 +443,35 @@ app.get('/api/categories/init', async (_request, response) => {
 app.post('/api/categories/init', async (_request, response) => {
   const document = await getCategoriesDocument();
   response.json(document.categories);
+});
+
+app.get('/api/departments', async (_request, response) => {
+  const document = await getDepartmentsDocument();
+  response.json(document.departments);
+});
+
+app.post('/api/departments', async (request, response) => {
+  try {
+    const departmentName = String(request.body?.departmentName || '').trim();
+    if (!departmentName) {
+      throw new Error('Department name is required');
+    }
+
+    const current = (await getDepartmentsDocument()).departments;
+    if (current.includes(departmentName)) {
+      throw new Error('Department already exists');
+    }
+
+    response.status(201).json(await saveDepartmentsDocument([...current, departmentName]));
+  } catch (error) {
+    response.status(400).json({ message: error.message });
+  }
+});
+
+app.delete('/api/departments/:departmentName', async (request, response) => {
+  const departmentName = request.params.departmentName;
+  const current = (await getDepartmentsDocument()).departments;
+  response.json(await saveDepartmentsDocument(current.filter((entry) => entry !== departmentName)));
 });
 
 app.post('/api/categories', async (request, response) => {

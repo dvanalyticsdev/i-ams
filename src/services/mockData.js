@@ -1,4 +1,5 @@
-import { DEFAULT_EXPENSE_CATEGORIES, DEPARTMENTS, PAYMENT_MODES } from './categories';
+import { DEFAULT_DEPARTMENTS, PAYMENT_MODES } from './categories';
+import { DEFAULT_EXPENSE_CATEGORIES } from './categoryDefaults';
 
 // Helper to generate a random date in a range
 const randomDate = (start, end) => {
@@ -170,7 +171,7 @@ export const generateMockExpenses = () => {
     const subCategories = DEFAULT_EXPENSE_CATEGORIES[category];
     const subCategory = subCategories[Math.floor(Math.random() * subCategories.length)];
     
-    const department = DEPARTMENTS[Math.floor(Math.random() * DEPARTMENTS.length)];
+    const department = DEFAULT_DEPARTMENTS[Math.floor(Math.random() * DEFAULT_DEPARTMENTS.length)];
     const employees = DEPT_EMPLOYEES[department];
     const employeeName = employees[Math.floor(Math.random() * employees.length)];
     const paymentMode = PAYMENT_MODES[Math.floor(Math.random() * PAYMENT_MODES.length)];

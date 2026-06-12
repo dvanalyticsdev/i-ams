@@ -22,9 +22,9 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { initializeDB, getExpenses, saveExpense, saveExpensesBulk, deleteExpense, deleteExpensesByImportBatch } from '../services/expenseService';
-import { DEPARTMENTS, PAYMENT_MODES } from '../services/categories';
+import { DEFAULT_DEPARTMENTS, PAYMENT_MODES } from '../services/categories';
 
-function ExpenseTracker({ categories, showToast }) {
+function ExpenseTracker({ categories, departments, showToast }) {
   // Database state
   const [expenses, setExpenses] = useState([]);
   
@@ -64,9 +64,10 @@ function ExpenseTracker({ categories, showToast }) {
     category: '',
     subCategory: '',
     amount: '',
+    invoiceNumber: '',
     paymentMode: 'Card',
     vendorName: '',
-    department: 'Engineering',
+    department: DEFAULT_DEPARTMENTS[0],
     employeeName: '',
     description: '',
     attachment: ''
@@ -89,6 +90,7 @@ function ExpenseTracker({ categories, showToast }) {
   }, []);
 
   const availableCategories = Object.keys(categories);
+  const availableDepartments = departments.length ? departments : DEFAULT_DEPARTMENTS;
   const formatDateForInput = (value) => {
     const date = value instanceof Date ? value : new Date(value);
     if (Number.isNaN(date.getTime())) {
@@ -128,6 +130,10 @@ function ExpenseTracker({ categories, showToast }) {
       setFilterSubCategory('');
     }
 
+    if (filterDept && !availableDepartments.includes(filterDept)) {
+      setFilterDept('');
+    }
+
     setFormData((prev) => {
       if (!availableCategories.length) {
         return {
@@ -145,15 +151,23 @@ function ExpenseTracker({ categories, showToast }) {
       }
 
       if (prev.subCategory && categories[prev.category]?.includes(prev.subCategory)) {
-        return prev;
+        if (prev.department && availableDepartments.includes(prev.department)) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          department: availableDepartments[0] || ''
+        };
       }
 
       return {
         ...prev,
-        subCategory: categories[prev.category]?.[0] || ''
+        subCategory: categories[prev.category]?.[0] || '',
+        department: availableDepartments.includes(prev.department) ? prev.department : (availableDepartments[0] || '')
       };
     });
-  }, [categories, filterCategory, filterSubCategory]);
+  }, [availableDepartments, categories, filterCategory, filterSubCategory, filterDept]);
 
   const refreshExpenses = async () => {
     const nextExpenses = await initializeDB();
@@ -198,10 +212,11 @@ function ExpenseTracker({ categories, showToast }) {
       const term = searchTerm.toLowerCase().trim();
       if (term) {
         const matchesId = item.expenseId.toLowerCase().includes(term);
+        const matchesInvoice = String(item.invoiceNumber || '').toLowerCase().includes(term);
         const matchesEmployee = item.employeeName.toLowerCase().includes(term);
         const matchesVendor = item.vendorName.toLowerCase().includes(term);
         const matchesDesc = item.description.toLowerCase().includes(term);
-        if (!matchesId && !matchesEmployee && !matchesVendor && !matchesDesc) {
+        if (!matchesId && !matchesInvoice && !matchesEmployee && !matchesVendor && !matchesDesc) {
           return false;
         }
       }
@@ -300,9 +315,10 @@ function ExpenseTracker({ categories, showToast }) {
       date: getTodayDate(),
       ...defaultCategorySelection,
       amount: '',
+      invoiceNumber: '',
       paymentMode: PAYMENT_MODES[0],
       vendorName: '',
-      department: DEPARTMENTS[0],
+      department: availableDepartments[0],
       employeeName: '',
       description: '',
       attachment: ''
@@ -320,6 +336,7 @@ function ExpenseTracker({ categories, showToast }) {
       category: expense.category,
       subCategory: expense.subCategory,
       amount: expense.amount,
+      invoiceNumber: expense.invoiceNumber || '',
       paymentMode: expense.paymentMode,
       vendorName: expense.vendorName,
       department: expense.department,
@@ -412,7 +429,8 @@ function ExpenseTracker({ categories, showToast }) {
       category: formData.category || defaultCategorySelection.category,
       subCategory: formData.subCategory || defaultCategorySelection.subCategory,
       paymentMode: formData.paymentMode || PAYMENT_MODES[0],
-      department: formData.department || DEPARTMENTS[0],
+      department: formData.department || availableDepartments[0],
+      invoiceNumber: formData.invoiceNumber.trim(),
       vendorName: formData.vendorName.trim(),
       employeeName: formData.employeeName.trim(),
       description: formData.description.trim(),
@@ -435,6 +453,7 @@ function ExpenseTracker({ categories, showToast }) {
   const getExportRows = () => {
     return filteredItems.map((expense) => ({
       'Expense ID': expense.expenseId,
+      'Invoice Number': expense.invoiceNumber || '',
       Date: expense.date,
       Category: expense.category,
       'Sub-Category': expense.subCategory,
@@ -490,6 +509,7 @@ function ExpenseTracker({ categories, showToast }) {
 
   const normalizeHeader = (header) => String(header).trim().toLowerCase().replace(/[^a-z0-9]/g, '');
   const monthHeaderPattern = /^[A-Za-z]{3}\/\d{2}$/;
+  const hasAnyHeader = (headers, aliases) => aliases.some((alias) => headers.includes(alias));
   const buildNormalizedCategoryMaps = () => {
     const normalizedCategoryLookup = new Map();
     const normalizedSubCategoryLookup = new Map();
@@ -616,9 +636,10 @@ function ExpenseTracker({ categories, showToast }) {
         category,
         subCategory,
         amount,
+        invoiceNumber: '',
         paymentMode: PAYMENT_MODES[0],
         vendorName: isFacultyFee ? '' : vendorName,
-        department: DEPARTMENTS[0],
+        department: availableDepartments[0],
         employeeName: isFacultyFee ? (employeeName || vendorName) : employeeName,
         description: `Imported from ${sheetName} - ${String(header).trim()}`,
         attachment: ''
@@ -724,7 +745,9 @@ function ExpenseTracker({ categories, showToast }) {
       }
 
       const normalizedHeaders = Object.keys(rows[0] || {}).map(normalizeHeader);
-      const hasFlatExpenseShape = ['amount', 'category'].some((header) => normalizedHeaders.includes(header));
+      const hasFlatExpenseShape =
+        hasAnyHeader(normalizedHeaders, ['amount', 'expensesamount']) &&
+        hasAnyHeader(normalizedHeaders, ['category', 'expensescategory']);
       if (hasFlatExpenseShape) {
         return rows.map(mapImportedRow);
       }
@@ -744,20 +767,45 @@ function ExpenseTracker({ categories, showToast }) {
     );
 
     const defaultCategorySelection = getDefaultCategorySelection();
-    const rawCategory = String(normalizedRow.category || '').trim();
-    const category = rawCategory && categories[rawCategory]
-      ? rawCategory
-      : defaultCategorySelection.category;
+    const rawCategory = String(
+      normalizedRow.category ||
+      normalizedRow.expensescategory ||
+      normalizedRow.maincategorydepartment ||
+      ''
+    ).trim();
+    const rawSubCategory = String(
+      normalizedRow.subcategory ||
+      normalizedRow.expensessubcategory ||
+      normalizedRow.subcategories ||
+      ''
+    ).trim();
+    const resolvedCategoryEntry = rawSubCategory
+      ? resolveCategoryEntry(rawSubCategory, rawCategory || defaultCategorySelection.category)
+      : resolveCategoryEntry(rawCategory, defaultCategorySelection.category);
+    const category = resolvedCategoryEntry.category || defaultCategorySelection.category;
     const availableSubCategories = categories[category] || [];
-    const rawSubCategory = String(normalizedRow.subcategory || '').trim();
-    const subCategory = rawSubCategory && availableSubCategories.includes(rawSubCategory)
-      ? rawSubCategory
-      : (availableSubCategories[0] || '');
-    const amount = parseFloat(normalizedRow.amount);
+    const subCategory = rawSubCategory
+      ? (resolvedCategoryEntry.subCategory || rawSubCategory)
+      : (availableSubCategories[0] || resolvedCategoryEntry.subCategory || defaultCategorySelection.subCategory);
+    const amount = parseFloat(normalizedRow.amount ?? normalizedRow.expensesamount);
+    const invoiceNumber = String(
+      normalizedRow.invoicenumber ||
+      normalizedRow.invoiceno ||
+      normalizedRow.invoicenum ||
+      normalizedRow.invoice ||
+      ''
+    ).trim();
     const paymentMode = String(normalizedRow.paymentmode || normalizedRow.mode || PAYMENT_MODES[0]).trim();
-    const department = String(normalizedRow.department || normalizedRow.dept || DEPARTMENTS[0]).trim();
+    const department = String(normalizedRow.department || normalizedRow.dept || availableDepartments[0]).trim();
     const vendorName = String(normalizedRow.vendorname || normalizedRow.vendor || '').trim();
-    const employeeName = String(normalizedRow.employeename || normalizedRow.employee || '').trim();
+    const employeeName = String(
+      normalizedRow.employeename ||
+      normalizedRow.employee ||
+      normalizedRow.expensesby ||
+      ''
+    ).trim();
+    const approvedBy = String(normalizedRow.approvedby || '').trim();
+    const description = String(normalizedRow.description || '').trim();
 
     if (Number.isNaN(amount) || amount <= 0) {
       throw new Error('Amount must be a positive number');
@@ -771,11 +819,14 @@ function ExpenseTracker({ categories, showToast }) {
       category,
       subCategory,
       amount,
+      invoiceNumber,
       paymentMode: PAYMENT_MODES.includes(paymentMode) ? paymentMode : PAYMENT_MODES[0],
       vendorName,
-      department: DEPARTMENTS.includes(department) ? department : DEPARTMENTS[0],
+      department: availableDepartments.includes(department) ? department : availableDepartments[0],
       employeeName,
-      description: String(normalizedRow.description || '').trim(),
+      description: approvedBy
+        ? `${description}${description ? ' ' : ''}Approved By: ${approvedBy}`
+        : description,
       attachment: String(normalizedRow.attachment || '').trim()
     };
   };
@@ -1045,7 +1096,7 @@ function ExpenseTracker({ categories, showToast }) {
             <label>Department</label>
             <select value={filterDept} onChange={e => setFilterDept(e.target.value)}>
               <option value="">All Departments</option>
-              {DEPARTMENTS.map(dept => (
+              {availableDepartments.map(dept => (
                 <option key={dept} value={dept}>{dept}</option>
               ))}
             </select>
@@ -1110,6 +1161,7 @@ function ExpenseTracker({ categories, showToast }) {
               <th onClick={() => handleSort('expenseId')} style={{ cursor: 'pointer' }}>
                 ID {sortField === 'expenseId' && (sortDirection === 'asc' ? '▲' : '▼')}
               </th>
+              <th className="text-left">Invoice No.</th>
               <th onClick={() => handleSort('date')} style={{ cursor: 'pointer' }}>
                 Date {sortField === 'date' && (sortDirection === 'asc' ? '▲' : '▼')}
               </th>
@@ -1128,7 +1180,7 @@ function ExpenseTracker({ categories, showToast }) {
           <tbody>
             {currentRows.length === 0 ? (
               <tr>
-                <td colSpan="10" style={{ padding: '40px', color: 'var(--text-muted)' }}>
+                <td colSpan="11" style={{ padding: '40px', color: 'var(--text-muted)' }}>
                   <AlertCircle size={32} style={{ display: 'block', margin: '0 auto 10px', color: 'var(--text-muted)' }} />
                   No matching expense claims found in this directory.
                 </td>
@@ -1137,6 +1189,7 @@ function ExpenseTracker({ categories, showToast }) {
               currentRows.map((row) => (
                 <tr key={row.expenseId} onClick={() => handleViewClick(row)} style={{ cursor: 'pointer' }}>
                   <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>{row.expenseId}</td>
+                  <td className="text-left" style={{ fontFamily: 'monospace' }}>{row.invoiceNumber || '-'}</td>
                   <td>{row.date}</td>
                   <td className="text-left" style={{ fontWeight: 600 }}>{row.employeeName}</td>
                   <td className="text-left" style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{row.category}</td>
@@ -1313,6 +1366,27 @@ function ExpenseTracker({ categories, showToast }) {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
+                  <label>Invoice Number</label>
+                  <input 
+                    type="text" 
+                    name="invoiceNumber" 
+                    value={formData.invoiceNumber} 
+                    onChange={handleFormChange}
+                    placeholder="e.g. INV-2026-001"
+                  />
+                </div>
+                <div>
+                  <label>Payment Mode</label>
+                  <select name="paymentMode" value={formData.paymentMode} onChange={handleFormChange}>
+                    {PAYMENT_MODES.map(mode => (
+                      <option key={mode} value={mode}>{mode}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
                   <label>Employee Name</label>
                   <input 
                     type="text" 
@@ -1338,16 +1412,8 @@ function ExpenseTracker({ categories, showToast }) {
                 <div>
                   <label>Department</label>
                   <select name="department" value={formData.department} onChange={handleFormChange}>
-                    {DEPARTMENTS.map(dept => (
+                    {availableDepartments.map(dept => (
                       <option key={dept} value={dept}>{dept}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label>Payment Mode</label>
-                  <select name="paymentMode" value={formData.paymentMode} onChange={handleFormChange}>
-                    {PAYMENT_MODES.map(mode => (
-                      <option key={mode} value={mode}>{mode}</option>
                     ))}
                   </select>
                 </div>
@@ -1426,6 +1492,10 @@ function ExpenseTracker({ categories, showToast }) {
               <div>
                 <span style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>Sub-Category</span>
                 <div style={{ fontWeight: 600, marginTop: '2px' }}>{selectedExpense.subCategory}</div>
+              </div>
+              <div>
+                <span style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>Invoice Number</span>
+                <div style={{ marginTop: '2px', fontFamily: 'monospace' }}>{selectedExpense.invoiceNumber || 'Not provided'}</div>
               </div>
 
               <div>
