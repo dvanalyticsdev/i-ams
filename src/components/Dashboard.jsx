@@ -621,21 +621,27 @@ function Dashboard({ categories, departments, showToast }) {
                   }}
                 />
                 <Legend layout="horizontal" align="center" verticalAlign="bottom" iconSize={8} wrapperStyle={{ fontSize: 10 }} />
-                <Bar
+                <Line
+                  type="monotone"
                   yAxisId="count"
                   dataKey="transactionCount"
                   name="Transaction Count"
-                  fill={chartTheme.primary}
-                  radius={[4, 4, 0, 0]}
-                  maxBarSize={90}
+                  stroke={chartTheme.primary}
+                  strokeWidth={3}
+                  dot={{ r: 3 }}
+                  activeDot={{ r: 5 }}
                 />
-                <Bar
+                <Line
+                  type="monotone"
                   yAxisId="cost"
-                  dataKey="averageCosting"
+                  dataKey="averageExpense"
                   name="Average Expense"
-                  fill={chartTheme.secondary}
-                  radius={[4, 4, 0, 0]}
-                  maxBarSize={90}
+                  stroke={chartTheme.secondary}
+                  strokeWidth={3}
+                  strokeDasharray="6 4"
+                  dot={{ r: 3 }}
+                  activeDot={{ r: 5 }}
+                  connectNulls
                 />
               </ComposedChart>
             )}

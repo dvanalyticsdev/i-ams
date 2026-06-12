@@ -403,17 +403,35 @@ const buildTrendSeries = (expenses, start, end, granularity) => {
   }));
 };
 
-const buildTransactionCountSummary = (expenses, timelineLabel) => {
-  const totalAmount = expenses.reduce(
-    (sum, expense) => sum + Number(expense.amount || 0),
-    0
+const buildTransactionComparisonSeries = (expenses, trendSeries, granularity) => {
+  const bucketStats = new Map(
+    trendSeries.map((entry) => [
+      entry.bucketDate.toISOString(),
+      { transactionCount: 0, totalAmount: 0 },
+    ])
   );
 
-  return [{
-    label: timelineLabel,
-    transactionCount: expenses.length,
-    averageCosting: expenses.length ? Math.round(totalAmount / expenses.length) : 0,
-  }];
+  expenses.forEach((expense) => {
+    const bucketDate = getBucketStart(new Date(expense.date), granularity);
+    const stats = bucketStats.get(bucketDate.toISOString());
+    if (!stats) {
+      return;
+    }
+
+    stats.transactionCount += 1;
+    stats.totalAmount += Number(expense.amount || 0);
+  });
+
+  return trendSeries.map((entry) => {
+    const stats = bucketStats.get(entry.bucketDate.toISOString());
+    return {
+      label: entry.label,
+      transactionCount: stats?.transactionCount || 0,
+      averageExpense: stats?.transactionCount
+        ? Math.round(stats.totalAmount / stats.transactionCount)
+        : null,
+    };
+  });
 };
 
 const getRangeMeta = (rangeType, granularity) => {
@@ -673,7 +691,11 @@ export const getDashboardAnalytics = (rangeType = 'month', customStart = null, c
     name: mode,
     value: Math.round(paymentSpend[mode]),
   }));
-  const transactionCountSummary = buildTransactionCountSummary(filtered, rangeMeta.timelineLabel);
+  const transactionComparisonSeries = buildTransactionComparisonSeries(
+    filtered,
+    trendSeries,
+    granularity
+  );
 
   const forecastResult = buildForecastFromTrendSeries(trendSeries, granularity);
   const recentTimeline = filtered.slice(0, 8).map((expense) => ({
@@ -709,7 +731,7 @@ export const getDashboardAnalytics = (rangeType = 'month', customStart = null, c
       distributionSeries: distributionData,
       topSubCategories,
       paymentModeAnalysis: paymentModeData,
-      transactionCountComparison: transactionCountSummary,
+      transactionCountComparison: transactionComparisonSeries,
       spendingForecast: forecastResult.forecastData,
       spendingForecastMeta: forecastResult.meta,
       recentTimeline,
