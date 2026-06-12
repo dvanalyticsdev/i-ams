@@ -120,31 +120,19 @@ export const saveExpensesBulk = async (expenses, importMeta = null) => {
     ...(importMeta || {}),
   }));
 
-  try {
-    const savedExpenses = await apiRequest('/expenses/bulk', {
-      method: 'POST',
-      body: JSON.stringify({ expenses: payload }),
-    });
+  const savedExpenses = await apiRequest('/expenses/bulk', {
+    method: 'POST',
+    body: JSON.stringify({ expenses: payload }),
+  });
 
-    const savedExpenseIds = new Set(savedExpenses.map((expense) => expense.expenseId));
-    const nextExpenses = [
-      ...savedExpenses,
-      ...currentExpenses.filter((expense) => !savedExpenseIds.has(expense.expenseId)),
-    ];
+  const savedExpenseIds = new Set(savedExpenses.map((expense) => expense.expenseId));
+  const nextExpenses = [
+    ...savedExpenses,
+    ...currentExpenses.filter((expense) => !savedExpenseIds.has(expense.expenseId)),
+  ];
 
-    writeExpenseCache(sortExpensesByDate(nextExpenses));
-    return savedExpenses;
-  } catch {
-    const generatedExpenses = [];
-
-    payload.forEach((expense) => {
-      const localExpense = withLocalExpenseDefaults(expense, [...currentExpenses, ...generatedExpenses]);
-      generatedExpenses.push(localExpense);
-    });
-
-    writeExpenseCache(sortExpensesByDate([...generatedExpenses, ...currentExpenses]));
-    return generatedExpenses;
-  }
+  writeExpenseCache(sortExpensesByDate(nextExpenses));
+  return nextExpenses;
 };
 
 export const deleteExpense = async (expenseId) => {
@@ -159,19 +147,12 @@ export const deleteExpense = async (expenseId) => {
 };
 
 export const deleteExpensesByImportBatch = async (importBatchId) => {
-  try {
-    const result = await apiRequest(`/expenses/import-batch/${encodeURIComponent(importBatchId)}`, {
-      method: 'DELETE',
-    });
+  const result = await apiRequest(`/expenses/import-batch/${encodeURIComponent(importBatchId)}`, {
+    method: 'DELETE',
+  });
 
-    writeExpenseCache(getExpenses().filter((expense) => expense.importBatchId !== importBatchId));
-    return result.removedCount || 0;
-  } catch {
-    const currentExpenses = getExpenses();
-    const nextExpenses = currentExpenses.filter((expense) => expense.importBatchId !== importBatchId);
-    writeExpenseCache(nextExpenses);
-    return currentExpenses.length - nextExpenses.length;
-  }
+  writeExpenseCache(getExpenses().filter((expense) => expense.importBatchId !== importBatchId));
+  return result.removedCount || 0;
 };
 
 const filterByDateRange = (data, rangeType, customStart = null, customEnd = null) => {

@@ -166,6 +166,52 @@ const getNextExpenseId = async (dateValue) => {
   return `EXP-${year}-${String(lastSequence + 1).padStart(4, '0')}`;
 };
 
+const getExpenseYear = (dateValue) => {
+  const yearFromDate = Number.parseInt(String(dateValue || '').slice(0, 4), 10);
+  return Number.isFinite(yearFromDate) ? yearFromDate : new Date().getFullYear();
+};
+
+const assignBulkExpenseIds = async (expenses) => {
+  const years = [...new Set(
+    expenses
+      .filter((expense) => !expense.expenseId)
+      .map((expense) => getExpenseYear(expense.date))
+  )];
+
+  const sequencesByYear = new Map(
+    await Promise.all(
+      years.map(async (year) => {
+        const prefix = `EXP-${year}-`;
+        const latestExpense = await getExpensesCollection()
+          .find({ expenseId: { $regex: `^${prefix}` } })
+          .sort({ expenseId: -1 })
+          .limit(1)
+          .next();
+        const latestSequence = latestExpense
+          ? Number.parseInt(String(latestExpense.expenseId).slice(prefix.length), 10) || 0
+          : 0;
+
+        return [year, latestSequence];
+      })
+    )
+  );
+
+  return expenses.map((expense) => {
+    if (expense.expenseId) {
+      return expense;
+    }
+
+    const year = getExpenseYear(expense.date);
+    const nextSequence = (sequencesByYear.get(year) || 0) + 1;
+    sequencesByYear.set(year, nextSequence);
+
+    return {
+      ...expense,
+      expenseId: `EXP-${year}-${String(nextSequence).padStart(4, '0')}`,
+    };
+  });
+};
+
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
 app.use('/api', (_request, response, next) => {
@@ -258,13 +304,9 @@ app.post('/api/expenses/bulk', async (request, response) => {
       throw new Error('No expenses supplied');
     }
 
-    const savedExpenses = [];
-    for (const entry of entries) {
+    const defaultCategorySelection = await getDefaultCategorySelection();
+    const sanitizedExpenses = entries.map((entry) => {
       const payload = sanitizeExpense(entry);
-      const defaultCategorySelection = await getDefaultCategorySelection();
-      if (!payload.expenseId) {
-        payload.expenseId = await getNextExpenseId(payload.date);
-      }
       if (!payload.date) {
         payload.date = new Date().toISOString().split('T')[0];
       }
@@ -275,14 +317,20 @@ app.post('/api/expenses/bulk', async (request, response) => {
         payload.subCategory = defaultCategorySelection.subCategory;
       }
       assertExpense(payload);
+      return payload;
+    });
 
-      await getExpensesCollection().updateOne(
-        { expenseId: payload.expenseId },
-        { $set: payload },
-        { upsert: true }
-      );
-      savedExpenses.push(payload);
-    }
+    const savedExpenses = await assignBulkExpenseIds(sanitizedExpenses);
+    await getExpensesCollection().bulkWrite(
+      savedExpenses.map((payload) => ({
+        updateOne: {
+          filter: { expenseId: payload.expenseId },
+          update: { $set: payload },
+          upsert: true,
+        },
+      })),
+      { ordered: true }
+    );
 
     response.status(201).json(savedExpenses);
   } catch (error) {

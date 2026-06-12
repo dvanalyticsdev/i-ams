@@ -51,6 +51,8 @@ function ExpenseTracker({ categories, showToast }) {
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [deletingImportBatchId, setDeletingImportBatchId] = useState('');
   
   // Active selected items for modals
   const [selectedExpense, setSelectedExpense] = useState(null);
@@ -779,6 +781,9 @@ function ExpenseTracker({ categories, showToast }) {
   };
 
   const handleImportClick = () => {
+    if (isImporting) {
+      return;
+    }
     importInputRef.current?.click();
   };
 
@@ -788,6 +793,7 @@ function ExpenseTracker({ categories, showToast }) {
       return;
     }
 
+    setIsImporting(true);
     try {
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: 'array' });
@@ -797,17 +803,18 @@ function ExpenseTracker({ categories, showToast }) {
         return;
       }
 
-      await saveExpensesBulk(parsedExpenses, {
+      const nextExpenses = await saveExpensesBulk(parsedExpenses, {
         importBatchId: `import-${Date.now()}`,
         importFileName: file.name,
         importedAt: new Date().toISOString()
       });
-      setExpenses(getExpenses());
+      setExpenses(nextExpenses);
       setCurrentPage(1);
       showToast(`Imported ${parsedExpenses.length} expense record(s) successfully`, 'success');
     } catch (error) {
       showToast(`Import failed: ${error.message}`, 'warning');
     } finally {
+      setIsImporting(false);
       event.target.value = '';
     }
   };
@@ -818,10 +825,17 @@ function ExpenseTracker({ categories, showToast }) {
       return;
     }
 
-    const removedCount = await deleteExpensesByImportBatch(batch.importBatchId);
-    setExpenses(getExpenses());
-    setCurrentPage(1);
-    showToast(`Deleted ${removedCount} imported record(s) from ${batch.importFileName}`, 'success');
+    setDeletingImportBatchId(batch.importBatchId);
+    try {
+      const removedCount = await deleteExpensesByImportBatch(batch.importBatchId);
+      setExpenses(getExpenses());
+      setCurrentPage(1);
+      showToast(`Deleted ${removedCount} imported record(s) from ${batch.importFileName}`, 'success');
+    } catch (error) {
+      showToast(`Delete failed: ${error.message}`, 'warning');
+    } finally {
+      setDeletingImportBatchId('');
+    }
   };
 
   const formatCurrency = (val) => {
@@ -928,10 +942,11 @@ function ExpenseTracker({ categories, showToast }) {
                   type="button"
                   className="btn btn-danger"
                   onClick={() => handleDeleteImportedBatch(batch)}
+                  disabled={deletingImportBatchId === batch.importBatchId}
                   style={{ fontSize: '12px' }}
                 >
                   <Trash2 size={14} />
-                  Delete Import
+                  {deletingImportBatchId === batch.importBatchId ? 'Deleting...' : 'Delete Import'}
                 </button>
               </div>
             ))
@@ -975,9 +990,13 @@ function ExpenseTracker({ categories, showToast }) {
                 </div>
               )}
             </div>
-            <button className="btn btn-secondary btn-compact" onClick={handleImportClick}>
+            <button
+              className="btn btn-secondary btn-compact"
+              onClick={handleImportClick}
+              disabled={isImporting}
+            >
               <Upload size={14} />
-              Import CSV/XLSX
+              {isImporting ? 'Importing...' : 'Import CSV/XLSX'}
             </button>
             <input
               ref={importInputRef}
