@@ -27,6 +27,46 @@ const writeExpenseCache = (expenses) => {
   return expenses;
 };
 
+const sortExpensesByDate = (expenses) =>
+  [...expenses].sort((a, b) => new Date(b.date) - new Date(a.date));
+
+const getYearFromExpenseDate = (dateValue) => {
+  const parsed = new Date(dateValue || Date.now());
+  const year = parsed.getFullYear();
+  return Number.isFinite(year) ? year : new Date().getFullYear();
+};
+
+const getNextLocalExpenseId = (existingExpenses, dateValue) => {
+  const year = getYearFromExpenseDate(dateValue);
+  const prefix = `EXP-${year}-`;
+  const maxSequence = existingExpenses.reduce((highest, expense) => {
+    const expenseId = String(expense.expenseId || '');
+    if (!expenseId.startsWith(prefix)) {
+      return highest;
+    }
+
+    const sequence = Number.parseInt(expenseId.slice(prefix.length), 10);
+    if (Number.isNaN(sequence)) {
+      return highest;
+    }
+
+    return Math.max(highest, sequence);
+  }, 0);
+
+  return `EXP-${year}-${String(maxSequence + 1).padStart(4, '0')}`;
+};
+
+const withLocalExpenseDefaults = (expense, existingExpenses = []) => {
+  const nextExpense = { ...expense };
+  if (!nextExpense.date) {
+    nextExpense.date = new Date().toISOString().split('T')[0];
+  }
+  if (!nextExpense.expenseId) {
+    nextExpense.expenseId = getNextLocalExpenseId(existingExpenses, nextExpense.date);
+  }
+  return nextExpense;
+};
+
 export const initializeDB = async () => {
   if (typeof window !== 'undefined') {
     for (const key of LEGACY_KEYS) {
@@ -34,29 +74,43 @@ export const initializeDB = async () => {
     }
   }
 
-  const expenses = await apiRequest('/expenses');
-  return writeExpenseCache(expenses);
+  try {
+    const expenses = await apiRequest('/expenses');
+    return writeExpenseCache(expenses);
+  } catch {
+    return readExpenseCache();
+  }
 };
 
 export const getExpenses = () => readExpenseCache();
 
 export const saveExpense = async (expense) => {
   const isEdit = Boolean(expense.expenseId);
-  const savedExpense = await apiRequest(
-    isEdit ? `/expenses/${encodeURIComponent(expense.expenseId)}` : '/expenses',
-    {
-      method: isEdit ? 'PUT' : 'POST',
-      body: JSON.stringify(expense),
-    }
-  );
-
   const currentExpenses = getExpenses();
-  const nextExpenses = isEdit
-    ? currentExpenses.map((entry) => (entry.expenseId === savedExpense.expenseId ? savedExpense : entry))
-    : [savedExpense, ...currentExpenses];
+  try {
+    const savedExpense = await apiRequest(
+      isEdit ? `/expenses/${encodeURIComponent(expense.expenseId)}` : '/expenses',
+      {
+        method: isEdit ? 'PUT' : 'POST',
+        body: JSON.stringify(expense),
+      }
+    );
 
-  writeExpenseCache(nextExpenses.sort((a, b) => new Date(b.date) - new Date(a.date)));
-  return savedExpense;
+    const nextExpenses = isEdit
+      ? currentExpenses.map((entry) => (entry.expenseId === savedExpense.expenseId ? savedExpense : entry))
+      : [savedExpense, ...currentExpenses];
+
+    writeExpenseCache(sortExpensesByDate(nextExpenses));
+    return savedExpense;
+  } catch {
+    const localExpense = withLocalExpenseDefaults(expense, currentExpenses);
+    const nextExpenses = isEdit
+      ? currentExpenses.map((entry) => (entry.expenseId === localExpense.expenseId ? localExpense : entry))
+      : [localExpense, ...currentExpenses];
+
+    writeExpenseCache(sortExpensesByDate(nextExpenses));
+    return localExpense;
+  }
 };
 
 export const saveExpensesBulk = async (expenses, importMeta = null) => {
@@ -65,30 +119,52 @@ export const saveExpensesBulk = async (expenses, importMeta = null) => {
     ...(importMeta || {}),
   }));
 
-  const savedExpenses = await apiRequest('/expenses/bulk', {
-    method: 'POST',
-    body: JSON.stringify({ expenses: payload }),
-  });
+  try {
+    const savedExpenses = await apiRequest('/expenses/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ expenses: payload }),
+    });
 
-  return initializeDB().then(() => savedExpenses);
+    return initializeDB().then(() => savedExpenses);
+  } catch {
+    const currentExpenses = getExpenses();
+    const generatedExpenses = [];
+
+    payload.forEach((expense) => {
+      const localExpense = withLocalExpenseDefaults(expense, [...currentExpenses, ...generatedExpenses]);
+      generatedExpenses.push(localExpense);
+    });
+
+    writeExpenseCache(sortExpensesByDate([...generatedExpenses, ...currentExpenses]));
+    return generatedExpenses;
+  }
 };
 
 export const deleteExpense = async (expenseId) => {
-  await apiRequest(`/expenses/${encodeURIComponent(expenseId)}`, {
-    method: 'DELETE',
-  });
-
-  writeExpenseCache(getExpenses().filter((expense) => expense.expenseId !== expenseId));
+  try {
+    await apiRequest(`/expenses/${encodeURIComponent(expenseId)}`, {
+      method: 'DELETE',
+    });
+  } finally {
+    writeExpenseCache(getExpenses().filter((expense) => expense.expenseId !== expenseId));
+  }
   return true;
 };
 
 export const deleteExpensesByImportBatch = async (importBatchId) => {
-  const result = await apiRequest(`/expenses/import-batch/${encodeURIComponent(importBatchId)}`, {
-    method: 'DELETE',
-  });
+  try {
+    const result = await apiRequest(`/expenses/import-batch/${encodeURIComponent(importBatchId)}`, {
+      method: 'DELETE',
+    });
 
-  writeExpenseCache(getExpenses().filter((expense) => expense.importBatchId !== importBatchId));
-  return result.removedCount || 0;
+    writeExpenseCache(getExpenses().filter((expense) => expense.importBatchId !== importBatchId));
+    return result.removedCount || 0;
+  } catch {
+    const currentExpenses = getExpenses();
+    const nextExpenses = currentExpenses.filter((expense) => expense.importBatchId !== importBatchId);
+    writeExpenseCache(nextExpenses);
+    return currentExpenses.length - nextExpenses.length;
+  }
 };
 
 const filterByDateRange = (data, rangeType, customStart = null, customEnd = null) => {
