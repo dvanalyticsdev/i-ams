@@ -368,6 +368,15 @@ const formatBucketLabel = (bucketDate, granularity) => {
   }
 };
 
+const formatDateRange = (rangeStart, rangeEnd) => {
+  const formatDate = (value) => {
+    const date = new Date(value);
+    return `${String(date.getDate()).padStart(2, '0')} ${monthNamesShort[date.getMonth()]}`;
+  };
+
+  return `${formatDate(rangeStart)} - ${formatDate(rangeEnd)}`;
+};
+
 const buildTrendSeries = (expenses, start, end, granularity, useNumberedWeeks = false) => {
   const normalizedStart = getBucketStart(start, granularity);
   const bucketMap = new Map();
@@ -375,10 +384,18 @@ const buildTrendSeries = (expenses, start, end, granularity, useNumberedWeeks = 
 
   for (let cursor = new Date(normalizedStart); cursor <= end; cursor = addBucket(cursor, granularity, 1)) {
     const key = cursor.toISOString();
+    const visibleWeekStart = new Date(Math.max(cursor.getTime(), start.getTime()));
+    const visibleWeekEnd = new Date(Math.min(
+      addBucket(cursor, 'day', 6).getTime(),
+      end.getTime()
+    ));
     bucketMap.set(key, {
       label: useNumberedWeeks && granularity === 'week'
         ? `Week ${series.length + 1}`
         : formatBucketLabel(cursor, granularity),
+      dateRange: useNumberedWeeks && granularity === 'week'
+        ? formatDateRange(visibleWeekStart, visibleWeekEnd)
+        : null,
       bucketDate: new Date(cursor),
       spend: 0,
     });
@@ -396,6 +413,7 @@ const buildTrendSeries = (expenses, start, end, granularity, useNumberedWeeks = 
 
   return series.map((entry) => ({
     label: entry.label,
+    dateRange: entry.dateRange,
     bucketDate: entry.bucketDate,
     spend: Math.round(entry.spend),
   }));
@@ -424,6 +442,7 @@ const buildTransactionComparisonSeries = (expenses, trendSeries, granularity) =>
     const stats = bucketStats.get(entry.bucketDate.toISOString());
     return {
       label: entry.label,
+      dateRange: entry.dateRange,
       transactionCount: stats?.transactionCount || 0,
       averageExpense: stats?.transactionCount
         ? Math.round(stats.totalAmount / stats.transactionCount)
@@ -562,6 +581,9 @@ const buildForecastFromTrendSeries = (trendSeries, granularity, useNumberedWeeks
       label: useNumberedWeeks && granularity === 'week'
         ? `Week ${trendSeries.length + step}`
         : formatBucketLabel(nextDate, granularity),
+      dateRange: useNumberedWeeks && granularity === 'week'
+        ? formatDateRange(nextDate, addBucket(nextDate, 'day', 6))
+        : null,
       bucketDate: nextDate,
       spend: Math.round(projectedValue),
       actualSpend: null,

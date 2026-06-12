@@ -196,6 +196,11 @@ function Dashboard({ categories, departments, showToast }) {
     }).format(val);
   };
 
+  const formatTimelineTooltipLabel = (label, payload) => {
+    const dateRange = payload?.[0]?.payload?.dateRange;
+    return dateRange ? `${label} (${dateRange})` : label;
+  };
+
   const handleCustomRangeSubmit = (e) => {
     e.preventDefault();
     if (!startDate || !endDate) {
@@ -465,6 +470,7 @@ function Dashboard({ categories, departments, showToast }) {
                   contentStyle={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '4px' }}
                   labelStyle={{ color: 'var(--text)', fontWeight: 600 }}
                   itemStyle={{ color: 'var(--primary)' }}
+                  labelFormatter={formatTimelineTooltipLabel}
                   formatter={(value) => [formatCurrency(value), 'Spend']}
                 />
                 <Line type="monotone" dataKey="spend" stroke={chartTheme.primary} strokeWidth={2} activeDot={{ r: 6 }} dot={{ r: 3 }} />
@@ -612,6 +618,7 @@ function Dashboard({ categories, departments, showToast }) {
                 />
                 <Tooltip
                   contentStyle={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '4px' }}
+                  labelFormatter={formatTimelineTooltipLabel}
                   formatter={(value, name, item) => {
                     if (item?.dataKey === 'transactionCount') {
                       return [value, 'Transaction Count'];
@@ -680,6 +687,7 @@ function Dashboard({ categories, departments, showToast }) {
                 <YAxis stroke={chartTheme.textMuted} fontSize={11} tickLine={false} axisLine={false} tickFormatter={v => `₹${v/1000}k`} />
                 <Tooltip 
                   contentStyle={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '4px' }}
+                  labelFormatter={formatTimelineTooltipLabel}
                   formatter={(value, name, props) => {
                     if (value === null || value === undefined) {
                       return null;
