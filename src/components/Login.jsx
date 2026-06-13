@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { Lock, User, RefreshCw, AlertCircle, Sun, Moon } from 'lucide-react';
 import { LogoFull } from './BrandLogo';
-
-const adminLoginId = import.meta.env.VITE_ADMIN_LOGIN_ID || '';
-const adminPassword = import.meta.env.VITE_ADMIN_PASSWORD || '';
+import {
+  buildAuthenticatedUser,
+  hasConfiguredAdminCredentials,
+  isValidAdminCredentialPair
+} from '../services/auth';
 
 function Login({ onLoginSuccess, theme, onThemeToggle }) {
   const [loginId, setLoginId] = useState('');
@@ -29,19 +31,15 @@ function Login({ onLoginSuccess, theme, onThemeToggle }) {
 
     // Simulated network authentication call (800ms)
     setTimeout(() => {
-      if (!adminLoginId || !adminPassword) {
+      if (!hasConfiguredAdminCredentials()) {
         setIsLoading(false);
         setError('Admin credentials are not configured in the environment.');
         return;
       }
 
-      if (loginId.trim() === adminLoginId && password.trim() === adminPassword) {
+      if (isValidAdminCredentialPair(loginId, password)) {
         setIsLoading(false);
-        onLoginSuccess({
-          username: adminLoginId,
-          role: 'Administrator',
-          name: 'Admin User'
-        });
+        onLoginSuccess(buildAuthenticatedUser());
       } else {
         setIsLoading(false);
         setError('Invalid Login ID or Password. Please try again.');

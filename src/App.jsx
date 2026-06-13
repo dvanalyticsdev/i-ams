@@ -19,6 +19,7 @@ import ExpenseTracker from './components/ExpenseTracker';
 import CategoryManagement from './components/CategoryManagement';
 import Login from './components/Login';
 import { LogoSidebar } from './components/BrandLogo';
+import { AUTH_STORAGE_KEY, restoreAuthenticatedUser } from './services/auth';
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -33,6 +34,16 @@ function App() {
   
   // Authentication state
   const [user, setUser] = useState(null);
+
+  function showToast(message, type = 'success') {
+    const id = Date.now();
+    setToasts((prev) => [...prev, { id, message, type }]);
+
+    // Auto remove after 3 seconds
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 3000);
+  }
 
   // Initialize database, apply theme, and check login session on load
   useEffect(() => {
@@ -53,9 +64,11 @@ function App() {
 
       applyTheme(theme);
 
-      const storedUser = window.localStorage.getItem('iams_auth_user');
-      if (storedUser && isMounted) {
-        setUser(JSON.parse(storedUser));
+      const { user: restoredUser, wasInvalidated } = restoreAuthenticatedUser();
+      if (restoredUser && isMounted) {
+        setUser(restoredUser);
+      } else if (wasInvalidated && isMounted) {
+        showToast('Admin credentials changed. Please log in again.', 'warning');
       }
 
       if (isMounted) {
@@ -88,26 +101,16 @@ function App() {
   };
 
   const handleLoginSuccess = (userData) => {
-    window.localStorage.setItem('iams_auth_user', JSON.stringify(userData));
+    window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(userData));
     setUser(userData);
     showToast("Authentication successful. Welcome to i-AMS Console.", "success");
   };
 
   const handleLogout = () => {
-    window.localStorage.removeItem('iams_auth_user');
+    window.localStorage.removeItem(AUTH_STORAGE_KEY);
     setHeaderMenuOpen(false);
     setUser(null);
     showToast("Session closed. Logged out successfully.", "success");
-  };
-
-  const showToast = (message, type = 'success') => {
-    const id = Date.now();
-    setToasts((prev) => [...prev, { id, message, type }]);
-    
-    // Auto remove after 3 seconds
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 3000);
   };
 
   const removeToast = (id) => {
