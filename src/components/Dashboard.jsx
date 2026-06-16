@@ -196,6 +196,92 @@ function Dashboard({ categories, departments, showToast }) {
     }).format(val);
   };
 
+  // ── Donut helpers ───────────────────────────────────────────────────────────
+  // Compact currency: ₹1.2L / ₹45k / ₹800
+  const formatCompact = (val) => {
+    if (val >= 10_00_000) return `₹${(val / 10_00_000).toFixed(1)}L`;
+    if (val >= 1000)      return `₹${(val / 1000).toFixed(0)}k`;
+    return `₹${val}`;
+  };
+
+  // Custom label rendered OUTSIDE each pie slice
+  const renderDonutLabel = ({
+    cx, cy, midAngle, outerRadius,
+    percent, value, index, name
+  }) => {
+    // Skip tiny slices (< 4%) – they get a tooltip instead
+    if (percent < 0.04) return null;
+
+    const RADIAN = Math.PI / 180;
+    // Leader-line anchor (on the pie edge)
+    const r1 = outerRadius + 8;
+    const x1 = cx + r1 * Math.cos(-midAngle * RADIAN);
+    const y1 = cy + r1 * Math.sin(-midAngle * RADIAN);
+    // Label endpoint (further out)
+    const r2 = outerRadius + 28;
+    const x2 = cx + r2 * Math.cos(-midAngle * RADIAN);
+    const y2 = cy + r2 * Math.sin(-midAngle * RADIAN);
+    // Text anchor
+    const textAnchor = x2 > cx ? 'start' : 'end';
+    const pct = `${(percent * 100).toFixed(1)}%`;
+    const amt = formatCompact(value);
+    const isDark = currentTheme === 'dark';
+    const labelColor = isDark ? '#c8d3e0' : '#444444';
+    const pctColor = isDark ? '#f05a28' : '#e05322';
+
+    return (
+      <g key={`label-${index}`}>
+        <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={isDark ? '#4a5568' : '#bbbbbb'} strokeWidth={1} />
+        <text x={x2 + (textAnchor === 'start' ? 4 : -4)} y={y2 - 5} textAnchor={textAnchor}
+          fill={pctColor} fontSize={10} fontWeight={700} fontFamily="inherit">
+          {pct}
+        </text>
+        <text x={x2 + (textAnchor === 'start' ? 4 : -4)} y={y2 + 7} textAnchor={textAnchor}
+          fill={labelColor} fontSize={9} fontFamily="inherit">
+          {amt}
+        </text>
+      </g>
+    );
+  };
+
+  // Numbered legend renderer  (01 Name  ██)
+  const renderNumberedLegend = (data, colorOffset = 0) => (
+    <div style={{
+      display: 'flex',
+      flexWrap: 'wrap',
+      justifyContent: 'center',
+      gap: '6px 14px',
+      marginTop: '10px',
+      padding: '0 8px'
+    }}>
+      {data.map((entry, i) => {
+        const color = chartTheme.colors[(i + colorOffset) % chartTheme.colors.length];
+        const num = String(i + 1).padStart(2, '0');
+        return (
+          <span key={entry.name} style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '5px',
+            fontSize: '10px',
+            color: 'var(--text)',
+            whiteSpace: 'nowrap'
+          }}>
+            <span style={{
+              display: 'inline-block',
+              width: '8px',
+              height: '8px',
+              borderRadius: '50%',
+              backgroundColor: color,
+              flexShrink: 0
+            }} />
+            <span style={{ color: 'var(--text-muted)', fontWeight: 700 }}>{num}</span>
+            <span>{entry.name}</span>
+          </span>
+        );
+      })}
+    </div>
+  );
+
   const formatTimelineTooltipLabel = (label, payload) => {
     const dateRange = payload?.[0]?.payload?.dateRange;
     return dateRange ? `${label} (${dateRange})` : label;
@@ -378,7 +464,7 @@ function Dashboard({ categories, departments, showToast }) {
             <Activity size={20} />
           </div>
           <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Avg. Transaction</span>
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Avg. Expenses</span>
             <span style={{ fontSize: '18px', fontWeight: 700, marginTop: '2px' }}>{formatCurrency(kpis.avgExpenseValue)}</span>
           </div>
         </div>
@@ -482,31 +568,33 @@ function Dashboard({ categories, departments, showToast }) {
         {/* Chart 2: Category Distribution */}
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <h3 style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Category-wise Spend Split</h3>
-          <ChartSurface minHeight={240}>
+          <ChartSurface minHeight={270}>
             {({ width, height }) => (
               <PieChart width={width} height={height} key={currentTheme}>
                 <Pie
                   data={charts.categoryBreakdown}
                   cx="50%"
-                  cy="50%"
+                  cy="46%"
                   innerRadius={50}
-                  outerRadius={80}
+                  outerRadius={75}
                   paddingAngle={3}
                   dataKey="value"
                   nameKey="name"
+                  labelLine={false}
+                  label={renderDonutLabel}
                 >
                   {charts.categoryBreakdown.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={chartTheme.colors[index % chartTheme.colors.length]} />
                   ))}
                 </Pie>
-                <Tooltip 
+                <Tooltip
                   contentStyle={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '4px' }}
-                  formatter={(value) => [formatCurrency(value), 'Total Spend']}
+                  formatter={(value, name) => [formatCurrency(value), name]}
                 />
-                <Legend layout="horizontal" align="center" verticalAlign="bottom" iconSize={8} iconType="circle" wrapperStyle={{ fontSize: 10, color: 'var(--text)' }} />
               </PieChart>
             )}
           </ChartSurface>
+          {renderNumberedLegend(charts.categoryBreakdown, 0)}
         </div>
 
         {/* Chart 3: Department-wise Expenses */}
@@ -561,29 +649,33 @@ function Dashboard({ categories, departments, showToast }) {
         {/* Chart 6: Payment Mode Analysis */}
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <h3 style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Payment Mode Analysis</h3>
-          <ChartSurface minHeight={240}>
+          <ChartSurface minHeight={270}>
             {({ width, height }) => (
               <PieChart width={width} height={height} key={currentTheme}>
                 <Pie
                   data={charts.paymentModeAnalysis}
                   cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={80}
+                  cy="46%"
+                  innerRadius={58}
+                  outerRadius={78}
+                  paddingAngle={3}
                   dataKey="value"
+                  nameKey="name"
+                  labelLine={false}
+                  label={renderDonutLabel}
                 >
                   {charts.paymentModeAnalysis.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={chartTheme.colors[(index + 2) % chartTheme.colors.length]} />
                   ))}
                 </Pie>
-                <Tooltip 
+                <Tooltip
                   contentStyle={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '4px' }}
-                  formatter={(value) => [formatCurrency(value), 'Spend']}
+                  formatter={(value, name) => [formatCurrency(value), name]}
                 />
-                <Legend layout="horizontal" align="center" verticalAlign="bottom" iconSize={8} wrapperStyle={{ fontSize: 10 }} />
               </PieChart>
             )}
           </ChartSurface>
+          {renderNumberedLegend(charts.paymentModeAnalysis, 2)}
         </div>
 
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
