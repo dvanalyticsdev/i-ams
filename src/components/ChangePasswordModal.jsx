@@ -125,7 +125,7 @@ function ChangePasswordModal({ isOpen, user, onClose, mustChange, onSuccess, sho
               value={currentPassword} 
               onChange={(e) => setCurrentPassword(e.target.value)}
               disabled={isLoading}
-              style={{ paddingRight: '36px' }}
+              style={{ paddingRight: '40px' }}
             />
             <Lock size={14} />
             <button
@@ -133,17 +133,27 @@ function ChangePasswordModal({ isOpen, user, onClose, mustChange, onSuccess, sho
               onClick={() => setShowCurrent(!showCurrent)}
               style={{
                 position: 'absolute',
-                right: '10px',
-                bottom: '10px',
+                right: '4px',
+                bottom: '0px',
+                height: '38px',
+                width: '34px',
                 background: 'none',
                 border: 'none',
                 color: 'var(--text-muted)',
                 cursor: 'pointer',
-                padding: 0
+                padding: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 10
               }}
               disabled={isLoading}
             >
-              {showCurrent ? <EyeOff size={16} /> : <Eye size={16} />}
+              {showCurrent ? (
+                <EyeOff size={16} style={{ position: 'static', transform: 'none', pointerEvents: 'auto', left: 'auto', color: 'inherit' }} />
+              ) : (
+                <Eye size={16} style={{ position: 'static', transform: 'none', pointerEvents: 'auto', left: 'auto', color: 'inherit' }} />
+              )}
             </button>
           </div>
 
@@ -155,7 +165,7 @@ function ChangePasswordModal({ isOpen, user, onClose, mustChange, onSuccess, sho
               value={newPassword} 
               onChange={(e) => setNewPassword(e.target.value)}
               disabled={isLoading}
-              style={{ paddingRight: '36px' }}
+              style={{ paddingRight: '40px' }}
             />
             <Lock size={14} />
             <button
@@ -163,17 +173,27 @@ function ChangePasswordModal({ isOpen, user, onClose, mustChange, onSuccess, sho
               onClick={() => setShowNew(!showNew)}
               style={{
                 position: 'absolute',
-                right: '10px',
-                bottom: '10px',
+                right: '4px',
+                bottom: '0px',
+                height: '38px',
+                width: '34px',
                 background: 'none',
                 border: 'none',
                 color: 'var(--text-muted)',
                 cursor: 'pointer',
-                padding: 0
+                padding: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 10
               }}
               disabled={isLoading}
             >
-              {showNew ? <EyeOff size={16} /> : <Eye size={16} />}
+              {showNew ? (
+                <EyeOff size={16} style={{ position: 'static', transform: 'none', pointerEvents: 'auto', left: 'auto', color: 'inherit' }} />
+              ) : (
+                <Eye size={16} style={{ position: 'static', transform: 'none', pointerEvents: 'auto', left: 'auto', color: 'inherit' }} />
+              )}
             </button>
           </div>
 
@@ -185,7 +205,7 @@ function ChangePasswordModal({ isOpen, user, onClose, mustChange, onSuccess, sho
               value={confirmPassword} 
               onChange={(e) => setConfirmPassword(e.target.value)}
               disabled={isLoading}
-              style={{ paddingRight: '36px' }}
+              style={{ paddingRight: '40px' }}
             />
             <Lock size={14} />
             <button
@@ -193,17 +213,27 @@ function ChangePasswordModal({ isOpen, user, onClose, mustChange, onSuccess, sho
               onClick={() => setShowConfirm(!showConfirm)}
               style={{
                 position: 'absolute',
-                right: '10px',
-                bottom: '10px',
+                right: '4px',
+                bottom: '0px',
+                height: '38px',
+                width: '34px',
                 background: 'none',
                 border: 'none',
                 color: 'var(--text-muted)',
                 cursor: 'pointer',
-                padding: 0
+                padding: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 10
               }}
               disabled={isLoading}
             >
-              {showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}
+              {showConfirm ? (
+                <EyeOff size={16} style={{ position: 'static', transform: 'none', pointerEvents: 'auto', left: 'auto', color: 'inherit' }} />
+              ) : (
+                <Eye size={16} style={{ position: 'static', transform: 'none', pointerEvents: 'auto', left: 'auto', color: 'inherit' }} />
+              )}
             </button>
           </div>
 
