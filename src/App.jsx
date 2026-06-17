@@ -58,42 +58,55 @@ function App() {
 
     const bootstrap = async () => {
       try {
-        await initializeDB();
-        const initializedCategories = await initializeExpenseCategories();
-        const initializedDepartments = await initializeDepartments();
-        if (isMounted) {
-          setCategories(initializedCategories);
-          setDepartments(initializedDepartments);
+        // Run each step independently – a failed API call must not block the UI
+        try {
+          await initializeDB();
+        } catch {
+          // Backend offline – expenseService already falls back to localStorage
+        }
+
+        try {
+          const initializedCategories = await initializeExpenseCategories();
+          if (isMounted) setCategories(initializedCategories);
+        } catch {
+          // Falls back to default categories already loaded in state
+        }
+
+        try {
+          const initializedDepartments = await initializeDepartments();
+          if (isMounted) setDepartments(initializedDepartments);
+        } catch {
+          // Falls back to default departments already loaded in state
+        }
+
+        applyTheme(theme);
+
+        const { user: restoredUser } = restoreAuthenticatedUser();
+        if (restoredUser && isMounted) {
+          try {
+            const validatedUser = await apiRequest('/auth/validate', {
+              method: 'POST',
+              body: JSON.stringify({
+                username: restoredUser.username,
+                sessionToken: restoredUser.sessionToken
+              })
+            });
+            setUser(validatedUser);
+            if (validatedUser.mustChangePassword) {
+              setForcePasswordChange(true);
+              setIsPasswordModalOpen(true);
+            }
+          } catch {
+            window.localStorage.removeItem(AUTH_STORAGE_KEY);
+            showToast('Session expired or credentials changed. Please log in again.', 'warning');
+          }
         }
       } catch (error) {
-        showToast(`Startup sync failed: ${error.message}`, 'warning');
-      }
-
-      applyTheme(theme);
-
-      const { user: restoredUser } = restoreAuthenticatedUser();
-      if (restoredUser && isMounted) {
-        try {
-          const validatedUser = await apiRequest('/auth/validate', {
-            method: 'POST',
-            body: JSON.stringify({
-              username: restoredUser.username,
-              sessionToken: restoredUser.sessionToken
-            })
-          });
-          setUser(validatedUser);
-          if (validatedUser.mustChangePassword) {
-            setForcePasswordChange(true);
-            setIsPasswordModalOpen(true);
-          }
-        } catch {
-          window.localStorage.removeItem(AUTH_STORAGE_KEY);
-          showToast('Session expired or credentials changed. Please log in again.', 'warning');
-        }
-      }
-
-      if (isMounted) {
-        setIsBootstrapping(false);
+        // Safety net – unexpected error
+        showToast(`Startup error: ${error.message}`, 'warning');
+      } finally {
+        // ALWAYS unblock the UI regardless of what happened above
+        if (isMounted) setIsBootstrapping(false);
       }
     };
 

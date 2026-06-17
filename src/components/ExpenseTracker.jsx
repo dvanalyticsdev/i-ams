@@ -50,10 +50,15 @@ function ExpenseTracker({ categories, departments, showToast }) {
   const [formModalOpen, setFormModalOpen] = useState(false);
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [deletingImportBatchId, setDeletingImportBatchId] = useState('');
-  
+
+  // Row selection state
+  const [selectedIds, setSelectedIds] = useState(new Set());
+
   // Active selected items for modals
   const [selectedExpense, setSelectedExpense] = useState(null);
   const importInputRef = useRef(null);
@@ -178,8 +183,9 @@ function ExpenseTracker({ categories, departments, showToast }) {
   // Reset pagination when filters change
   useEffect(() => {
     setCurrentPage(1);
+    setSelectedIds(new Set());
   }, [
-    searchTerm, filterCategory, filterSubCategory, filterDept, 
+    searchTerm, filterCategory, filterSubCategory, filterDept,
     filterMinAmount, filterMaxAmount, filterStartDate, filterEndDate
   ]);
 
@@ -399,10 +405,73 @@ function ExpenseTracker({ categories, departments, showToast }) {
   const confirmDelete = async () => {
     if (selectedExpense) {
       await deleteExpense(selectedExpense.expenseId);
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(selectedExpense.expenseId);
+        return next;
+      });
       await refreshExpenses();
       setDeleteConfirmOpen(false);
       setSelectedExpense(null);
       showToast("Expense record deleted successfully", "success");
+    }
+  };
+
+  // ---- Row selection helpers ----
+  const handleRowCheck = (expenseId, e) => {
+    e.stopPropagation();
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(expenseId)) {
+        next.delete(expenseId);
+      } else {
+        next.add(expenseId);
+      }
+      return next;
+    });
+  };
+
+  const handleMasterCheck = (e) => {
+    e.stopPropagation();
+    if (currentRows.every((row) => selectedIds.has(row.expenseId))) {
+      // deselect all on this page
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        currentRows.forEach((row) => next.delete(row.expenseId));
+        return next;
+      });
+    } else {
+      // select all on this page
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        currentRows.forEach((row) => next.add(row.expenseId));
+        return next;
+      });
+    }
+  };
+
+  const isPageFullySelected =
+    currentRows.length > 0 && currentRows.every((row) => selectedIds.has(row.expenseId));
+  const isPagePartiallySelected =
+    !isPageFullySelected && currentRows.some((row) => selectedIds.has(row.expenseId));
+
+  // Bulk delete confirm
+  const confirmBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    setIsBulkDeleting(true);
+    try {
+      const ids = [...selectedIds];
+      for (const id of ids) {
+        await deleteExpense(id);
+      }
+      setSelectedIds(new Set());
+      await refreshExpenses();
+      setBulkDeleteConfirmOpen(false);
+      showToast(`${ids.length} expense record(s) deleted successfully`, 'success');
+    } catch (err) {
+      showToast(`Bulk delete failed: ${err.message}`, 'warning');
+    } finally {
+      setIsBulkDeleting(false);
     }
   };
 
@@ -953,7 +1022,7 @@ function ExpenseTracker({ categories, departments, showToast }) {
             <TrendingUp size={16} />
           </div>
           <div>
-            <div className="metric-label">Filtered Spend</div>
+            <div className="metric-label">Total Spend</div>
             <div className="metric-value">{formatCurrency(summaryTotalAmount)}</div>
           </div>
         </div>
@@ -973,7 +1042,7 @@ function ExpenseTracker({ categories, departments, showToast }) {
             <IndianRupee size={16} />
           </div>
           <div>
-            <div className="metric-label">Average Transaction</div>
+            <div className="metric-label">Average Expenses</div>
             <div className="metric-value">{formatCurrency(summaryAvgAmount)}</div>
           </div>
         </div>
@@ -1057,6 +1126,16 @@ function ExpenseTracker({ categories, departments, showToast }) {
           </div>
 
           <div className="toolbar-actions">
+            {selectedIds.size > 0 && (
+              <button
+                className="btn btn-danger btn-compact"
+                onClick={() => setBulkDeleteConfirmOpen(true)}
+                title={`Delete ${selectedIds.size} selected record(s)`}
+              >
+                <Trash2 size={14} />
+                Delete ({selectedIds.size})
+              </button>
+            )}
             <button className="btn btn-secondary btn-compact" onClick={handleClearFilters}>
               Reset Filters
             </button>
@@ -1196,6 +1275,16 @@ function ExpenseTracker({ categories, departments, showToast }) {
         <table>
           <thead>
             <tr>
+              <th style={{ width: '36px', padding: '8px 6px' }}>
+                <input
+                  type="checkbox"
+                  checked={isPageFullySelected}
+                  ref={(el) => { if (el) el.indeterminate = isPagePartiallySelected; }}
+                  onChange={handleMasterCheck}
+                  title="Select / deselect all on this page"
+                  style={{ width: '14px', height: '14px', cursor: 'pointer', accentColor: 'var(--primary)' }}
+                />
+              </th>
               <th onClick={() => handleSort('expenseId')} style={{ cursor: 'pointer' }}>
                 ID {sortField === 'expenseId' && (sortDirection === 'asc' ? '▲' : '▼')}
               </th>
@@ -1218,14 +1307,29 @@ function ExpenseTracker({ categories, departments, showToast }) {
           <tbody>
             {currentRows.length === 0 ? (
               <tr>
-                <td colSpan="11" style={{ padding: '40px', color: 'var(--text-muted)' }}>
+                <td colSpan="12" style={{ padding: '40px', color: 'var(--text-muted)' }}>
                   <AlertCircle size={32} style={{ display: 'block', margin: '0 auto 10px', color: 'var(--text-muted)' }} />
                   No matching expense claims found in this directory.
                 </td>
               </tr>
             ) : (
               currentRows.map((row) => (
-                <tr key={row.expenseId} onClick={() => handleViewClick(row)} style={{ cursor: 'pointer' }}>
+                <tr
+                  key={row.expenseId}
+                  onClick={() => handleViewClick(row)}
+                  style={{
+                    cursor: 'pointer',
+                    backgroundColor: selectedIds.has(row.expenseId) ? 'var(--primary-soft)' : undefined
+                  }}
+                >
+                  <td style={{ padding: '8px 6px' }} onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(row.expenseId)}
+                      onChange={(e) => handleRowCheck(row.expenseId, e)}
+                      style={{ width: '14px', height: '14px', cursor: 'pointer', accentColor: 'var(--primary)' }}
+                    />
+                  </td>
                   <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>{row.expenseId}</td>
                   <td className="text-left" style={{ fontFamily: 'monospace' }}>{row.invoiceNumber || '-'}</td>
                   <td>{row.date}</td>
@@ -1244,24 +1348,24 @@ function ExpenseTracker({ categories, departments, showToast }) {
                   </td>
                   <td>
                     <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
-                      <button 
-                        className="btn btn-ghost" 
+                      <button
+                        className="btn btn-ghost"
                         onClick={(e) => { e.stopPropagation(); handleViewClick(row); }}
                         style={{ padding: '4px', color: 'var(--text-muted)' }}
                         title="View Details"
                       >
                         <Eye size={13} />
                       </button>
-                      <button 
-                        className="btn btn-ghost" 
+                      <button
+                        className="btn btn-ghost"
                         onClick={(e) => handleEditClick(row, e)}
                         style={{ padding: '4px', color: 'var(--text-muted)' }}
                         title="Edit Record"
                       >
                         <Edit3 size={13} />
                       </button>
-                      <button 
-                        className="btn btn-ghost" 
+                      <button
+                        className="btn btn-ghost"
                         onClick={(e) => handleDeleteClick(row, e)}
                         style={{ padding: '4px', color: 'var(--danger)' }}
                         title="Delete Record"
@@ -1614,7 +1718,7 @@ function ExpenseTracker({ categories, departments, showToast }) {
         </div>
       )}
 
-      {/* DELETE CONFIRMATION MODAL */}
+      {/* SINGLE DELETE CONFIRMATION MODAL */}
       {deleteConfirmOpen && selectedExpense && (
         <div className="dialog-backdrop" style={{ zIndex: 510 }}>
           <div className="card dialog-card dialog-card--sm" role="dialog" aria-modal="true" aria-label={`Delete ${selectedExpense.expenseId}`} style={{ textAlign: 'center' }}>
@@ -1633,6 +1737,56 @@ function ExpenseTracker({ categories, departments, showToast }) {
               </button>
               <button className="btn btn-danger" onClick={confirmDelete}>
                 Delete Permanently
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BULK DELETE CONFIRMATION MODAL */}
+      {bulkDeleteConfirmOpen && (
+        <div className="dialog-backdrop" style={{ zIndex: 520 }}>
+          <div className="card dialog-card dialog-card--sm" role="dialog" aria-modal="true" aria-label="Bulk delete records" style={{ textAlign: 'center' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', color: 'var(--danger)', margin: '10px 0 4px' }}>
+              <Trash2 size={40} />
+            </div>
+
+            <h3 style={{ fontSize: '14px', fontWeight: 700, textTransform: 'uppercase' }}>Delete Selected Records?</h3>
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.5, marginTop: '6px' }}>
+              You are about to permanently delete{' '}
+              <strong style={{ color: 'var(--danger)' }}>{selectedIds.size} record{selectedIds.size !== 1 ? 's' : ''}</strong>.
+              This action cannot be undone and all associated data will be removed.
+            </p>
+
+            <div
+              style={{
+                margin: '12px 0',
+                padding: '8px 12px',
+                backgroundColor: 'var(--danger-soft)',
+                border: '1px solid var(--danger)',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: '11px',
+                color: 'var(--danger)',
+                fontWeight: 600
+              }}
+            >
+              {selectedIds.size} expense record{selectedIds.size !== 1 ? 's' : ''} will be deleted
+            </div>
+
+            <div className="dialog-actions" style={{ justifyContent: 'center' }}>
+              <button
+                className="btn btn-secondary"
+                onClick={() => setBulkDeleteConfirmOpen(false)}
+                disabled={isBulkDeleting}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-danger"
+                onClick={confirmBulkDelete}
+                disabled={isBulkDeleting}
+              >
+                {isBulkDeleting ? 'Deleting...' : `Delete ${selectedIds.size} Record${selectedIds.size !== 1 ? 's' : ''}`}
               </button>
             </div>
           </div>

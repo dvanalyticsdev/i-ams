@@ -42,21 +42,23 @@ const readDepartmentCache = () => readStorageJson(DEPARTMENT_STORAGE_KEY, cloneD
 const writeDepartmentCache = (departments) => writeStorageJson(DEPARTMENT_STORAGE_KEY, departments);
 
 export const initializeExpenseCategories = async () => {
-  if (typeof window !== 'undefined') {
-    window.localStorage.removeItem(CATEGORY_STORAGE_KEY);
+  try {
+    const categories = await apiRequest('/categories');
+    return writeCategoryCache(categories);
+  } catch {
+    // API unavailable – return cached categories or built-in defaults
+    return readCategoryCache();
   }
-
-  const categories = await apiRequest('/categories');
-  return writeCategoryCache(categories);
 };
 
 export const initializeDepartments = async () => {
-  if (typeof window !== 'undefined') {
-    window.localStorage.removeItem(DEPARTMENT_STORAGE_KEY);
+  try {
+    const departments = await apiRequest('/departments');
+    return writeDepartmentCache(departments);
+  } catch {
+    // API unavailable – return cached departments or built-in defaults
+    return readDepartmentCache();
   }
-
-  const departments = await apiRequest('/departments');
-  return writeDepartmentCache(departments);
 };
 
 export const getExpenseCategories = () => readCategoryCache();
