@@ -1,11 +1,7 @@
 import { useState } from 'react';
 import { Lock, User, RefreshCw, AlertCircle, Sun, Moon } from 'lucide-react';
 import { LogoFull } from './BrandLogo';
-import {
-  buildAuthenticatedUser,
-  hasConfiguredAdminCredentials,
-  isValidAdminCredentialPair
-} from '../services/auth';
+import { apiRequest } from '../services/api';
 
 function Login({ onLoginSuccess, theme, onThemeToggle }) {
   const [loginId, setLoginId] = useState('');
@@ -13,7 +9,7 @@ function Login({ onLoginSuccess, theme, onThemeToggle }) {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
 
@@ -29,22 +25,20 @@ function Login({ onLoginSuccess, theme, onThemeToggle }) {
 
     setIsLoading(true);
 
-    // Simulated network authentication call (800ms)
-    setTimeout(() => {
-      if (!hasConfiguredAdminCredentials()) {
-        setIsLoading(false);
-        setError('Admin credentials are not configured in the environment.');
-        return;
-      }
-
-      if (isValidAdminCredentialPair(loginId, password)) {
-        setIsLoading(false);
-        onLoginSuccess(buildAuthenticatedUser());
-      } else {
-        setIsLoading(false);
-        setError('Invalid Login ID or Password. Please try again.');
-      }
-    }, 800);
+    try {
+      const userData = await apiRequest('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({
+          username: loginId.trim(),
+          password: password.trim()
+        })
+      });
+      setIsLoading(false);
+      onLoginSuccess(userData);
+    } catch (err) {
+      setIsLoading(false);
+      setError(err.message || 'Invalid Login ID or Password. Please try again.');
+    }
   };
 
   return (

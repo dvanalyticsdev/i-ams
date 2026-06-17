@@ -9,7 +9,9 @@ import {
   AlertCircle,
   LogOut,
   Sun,
-  Moon
+  Moon,
+  Users,
+  Key
 } from 'lucide-react';
 import { getInitialTheme, applyTheme } from './theme';
 import { initializeDB } from './services/expenseService';
@@ -18,8 +20,11 @@ import Dashboard from './components/Dashboard';
 import ExpenseTracker from './components/ExpenseTracker';
 import CategoryManagement from './components/CategoryManagement';
 import Login from './components/Login';
+import AdminManagement from './components/AdminManagement';
+import ChangePasswordModal from './components/ChangePasswordModal';
 import { LogoSidebar } from './components/BrandLogo';
 import { AUTH_STORAGE_KEY, restoreAuthenticatedUser } from './services/auth';
+import { apiRequest } from './services/api';
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -34,6 +39,8 @@ function App() {
   
   // Authentication state
   const [user, setUser] = useState(null);
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+  const [forcePasswordChange, setForcePasswordChange] = useState(false);
 
   function showToast(message, type = 'success') {
     const id = Date.now();
@@ -64,11 +71,25 @@ function App() {
 
       applyTheme(theme);
 
-      const { user: restoredUser, wasInvalidated } = restoreAuthenticatedUser();
+      const { user: restoredUser } = restoreAuthenticatedUser();
       if (restoredUser && isMounted) {
-        setUser(restoredUser);
-      } else if (wasInvalidated && isMounted) {
-        showToast('Admin credentials changed. Please log in again.', 'warning');
+        try {
+          const validatedUser = await apiRequest('/auth/validate', {
+            method: 'POST',
+            body: JSON.stringify({
+              username: restoredUser.username,
+              sessionToken: restoredUser.sessionToken
+            })
+          });
+          setUser(validatedUser);
+          if (validatedUser.mustChangePassword) {
+            setForcePasswordChange(true);
+            setIsPasswordModalOpen(true);
+          }
+        } catch {
+          window.localStorage.removeItem(AUTH_STORAGE_KEY);
+          showToast('Session expired or credentials changed. Please log in again.', 'warning');
+        }
       }
 
       if (isMounted) {
@@ -104,12 +125,17 @@ function App() {
     window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(userData));
     setUser(userData);
     showToast("Authentication successful. Welcome to i-AMS Console.", "success");
+    if (userData.mustChangePassword) {
+      setForcePasswordChange(true);
+      setIsPasswordModalOpen(true);
+    }
   };
 
   const handleLogout = () => {
     window.localStorage.removeItem(AUTH_STORAGE_KEY);
     setHeaderMenuOpen(false);
     setUser(null);
+    setActiveTab('dashboard');
     showToast("Session closed. Logged out successfully.", "success");
   };
 
@@ -129,6 +155,10 @@ function App() {
     categories: {
       title: 'Category Management',
       subtitle: 'Control the category structure used across all expense records.'
+    },
+    admins: {
+      title: 'Administrator Registry',
+      subtitle: 'Manage administrative privileges and access control.'
     }
   };
 
@@ -218,6 +248,21 @@ function App() {
             <FolderTree size={16} />
             <span>Categories</span>
           </button>
+
+          {user.role === 'Super Admin' && (
+            <button
+              type="button"
+              className={`nav-item ${activeTab === 'admins' ? 'active' : ''}`}
+              onClick={() => {
+                setActiveTab('admins');
+                setSidebarOpen(false);
+              }}
+              aria-current={activeTab === 'admins' ? 'page' : undefined}
+            >
+              <Users size={16} />
+              <span>Admin Accounts</span>
+            </button>
+          )}
         </nav>
       </aside>
 
@@ -245,7 +290,7 @@ function App() {
 
             <div className="header-right" ref={headerMenuRef}>
               <div className="user-profile user-profile--compact">
-                <span className="user-profile-chip">Admin</span>
+                <span className="user-profile-chip">{user.role}</span>
               </div>
 
               <button
@@ -281,6 +326,22 @@ function App() {
 
                 <button
                   type="button"
+                  className="header-actions-item"
+                  onClick={() => {
+                    setForcePasswordChange(false);
+                    setIsPasswordModalOpen(true);
+                    setHeaderMenuOpen(false);
+                  }}
+                  role="menuitem"
+                >
+                  <span className="header-actions-item__icon">
+                    <Key size={16} />
+                  </span>
+                  <span>Change Password</span>
+                </button>
+
+                <button
+                  type="button"
                   className="header-actions-item header-actions-item--danger"
                   onClick={handleLogout}
                   role="menuitem"
@@ -311,6 +372,11 @@ function App() {
               onDepartmentsChange={setDepartments}
               showToast={showToast}
             />
+          ) : activeTab === 'admins' && user.role === 'Super Admin' ? (
+            <AdminManagement
+              user={user}
+              showToast={showToast}
+            />
           ) : (
             <ExpenseTracker
               categories={categories}
@@ -339,6 +405,22 @@ function App() {
           </div>
         ))}
       </div>
+
+      {/* CHANGE PASSWORD MODAL */}
+      <ChangePasswordModal
+        isOpen={isPasswordModalOpen}
+        user={user}
+        mustChange={forcePasswordChange}
+        onClose={() => setIsPasswordModalOpen(false)}
+        onSuccess={() => {
+          setIsPasswordModalOpen(false);
+          setForcePasswordChange(false);
+          const updatedUser = { ...user, mustChangePassword: false };
+          window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(updatedUser));
+          setUser(updatedUser);
+        }}
+        showToast={showToast}
+      />
     </div>
   );
 }

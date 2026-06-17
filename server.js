@@ -1,10 +1,19 @@
 import 'dotenv/config';
 import cors from 'cors';
 import express from 'express';
+import crypto from 'crypto';
 import { MongoClient } from 'mongodb';
 import { DEFAULT_EXPENSE_CATEGORIES } from './src/services/categoryDefaults.js';
 
 const app = express();
+
+const hashPassword = (password, salt) => {
+  return crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
+};
+
+const generateSalt = () => {
+  return crypto.randomBytes(16).toString('hex');
+};
 const port = Number(process.env.PORT || 4000);
 const mongoUri = process.env.MONGO_URI;
 const dbName = process.env.MONGO_DB_NAME || 'i-ams';
@@ -95,6 +104,33 @@ const normalizeDepartments = (departments) =>
 
 const getExpensesCollection = () => database.collection('expenses');
 const getCategoriesCollection = () => database.collection('settings');
+const getUsersCollection = () => database.collection('users');
+
+const seedDefaultSuperAdmin = async () => {
+  const usersCollection = getUsersCollection();
+  const superAdminCount = await usersCollection.countDocuments({ role: 'Super Admin' });
+  if (superAdminCount === 0) {
+    const adminLoginId = process.env.VITE_ADMIN_LOGIN_ID || 'iams_admin';
+    const adminPassword = process.env.VITE_ADMIN_PASSWORD || 'N5@zK8!wC3#pR7$yT2';
+    
+    const existing = await usersCollection.findOne({ username: adminLoginId });
+    if (!existing) {
+      const salt = generateSalt();
+      const passwordHash = hashPassword(adminPassword, salt);
+      await usersCollection.insertOne({
+        username: adminLoginId,
+        passwordHash,
+        salt,
+        role: 'Super Admin',
+        name: 'Super Admin User',
+        mustChangePassword: true,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
+      console.log(`Default Super Admin seeded: ${adminLoginId}`);
+    }
+  }
+};
 
 const initializeDatabase = async () => {
   if (database) {
@@ -110,6 +146,8 @@ const initializeDatabase = async () => {
       await client.connect();
       database = client.db(dbName);
       await getExpensesCollection().createIndex({ expenseId: 1 }, { unique: true });
+      await getUsersCollection().createIndex({ username: 1 }, { unique: true });
+      await seedDefaultSuperAdmin();
       await getCategoriesDocument();
       await getDepartmentsDocument();
       return database;
@@ -534,6 +572,218 @@ app.delete('/api/categories/:categoryName/subcategories/:subCategoryName', async
 
   current[categoryName] = current[categoryName].filter((entry) => entry !== subCategoryName);
   response.json(await saveCategoriesDocument(current));
+});
+
+// Authentication and User Management Routes
+
+app.post('/api/auth/login', async (request, response) => {
+  try {
+    const { username, password } = request.body || {};
+    if (!username || !password) {
+      response.status(400).json({ message: 'Username and password are required' });
+      return;
+    }
+
+    const usersCollection = getUsersCollection();
+    const user = await usersCollection.findOne({ username: username.trim() });
+    if (!user) {
+      response.status(401).json({ message: 'Invalid Login ID or Password. Please try again.' });
+      return;
+    }
+
+    const hash = hashPassword(password.trim(), user.salt);
+    if (hash !== user.passwordHash) {
+      response.status(401).json({ message: 'Invalid Login ID or Password. Please try again.' });
+      return;
+    }
+
+    const sessionToken = crypto.randomBytes(32).toString('hex');
+    await usersCollection.updateOne(
+      { _id: user._id },
+      { $set: { sessionToken, updatedAt: new Date() } }
+    );
+
+    response.json({
+      username: user.username,
+      role: user.role,
+      name: user.name,
+      sessionToken,
+      mustChangePassword: !!user.mustChangePassword
+    });
+  } catch (error) {
+    response.status(500).json({ message: error.message });
+  }
+});
+
+app.post('/api/auth/validate', async (request, response) => {
+  try {
+    const { username, sessionToken } = request.body || {};
+    if (!username || !sessionToken) {
+      response.status(400).json({ message: 'Username and session token are required' });
+      return;
+    }
+
+    const usersCollection = getUsersCollection();
+    const user = await usersCollection.findOne({ username: username.trim(), sessionToken });
+    if (!user) {
+      response.status(401).json({ message: 'Session is invalid or expired' });
+      return;
+    }
+
+    response.json({
+      username: user.username,
+      role: user.role,
+      name: user.name,
+      sessionToken,
+      mustChangePassword: !!user.mustChangePassword
+    });
+  } catch (error) {
+    response.status(500).json({ message: error.message });
+  }
+});
+
+app.post('/api/auth/change-password', async (request, response) => {
+  try {
+    const { username, sessionToken, currentPassword, newPassword } = request.body || {};
+    if (!username || !sessionToken || !currentPassword || !newPassword) {
+      response.status(400).json({ message: 'All fields are required' });
+      return;
+    }
+
+    const usersCollection = getUsersCollection();
+    const user = await usersCollection.findOne({ username: username.trim(), sessionToken });
+    if (!user) {
+      response.status(401).json({ message: 'Session is invalid or expired' });
+      return;
+    }
+
+    const currentHash = hashPassword(currentPassword.trim(), user.salt);
+    if (currentHash !== user.passwordHash) {
+      response.status(400).json({ message: 'Incorrect current password' });
+      return;
+    }
+
+    const newSalt = generateSalt();
+    const newPasswordHash = hashPassword(newPassword.trim(), newSalt);
+
+    await usersCollection.updateOne(
+      { _id: user._id },
+      {
+        $set: {
+          passwordHash: newPasswordHash,
+          salt: newSalt,
+          mustChangePassword: false,
+          updatedAt: new Date()
+        }
+      }
+    );
+
+    response.json({ message: 'Password changed successfully' });
+  } catch (error) {
+    response.status(500).json({ message: error.message });
+  }
+});
+
+app.post('/api/auth/create-admin', async (request, response) => {
+  try {
+    const { username, sessionToken, adminUsername, adminPassword, adminName } = request.body || {};
+    if (!username || !sessionToken || !adminUsername || !adminPassword || !adminName) {
+      response.status(400).json({ message: 'All fields are required' });
+      return;
+    }
+
+    const usersCollection = getUsersCollection();
+    const requester = await usersCollection.findOne({ username: username.trim(), sessionToken });
+    if (!requester || requester.role !== 'Super Admin') {
+      response.status(403).json({ message: 'Unauthorized. Only Super Admins can create secondary admins.' });
+      return;
+    }
+
+    const existing = await usersCollection.findOne({ username: adminUsername.trim() });
+    if (existing) {
+      response.status(400).json({ message: 'An account with this username/login ID already exists' });
+      return;
+    }
+
+    const salt = generateSalt();
+    const passwordHash = hashPassword(adminPassword.trim(), salt);
+
+    await usersCollection.insertOne({
+      username: adminUsername.trim(),
+      passwordHash,
+      salt,
+      role: 'Admin',
+      name: adminName.trim(),
+      mustChangePassword: false,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+
+    response.status(201).json({ message: 'Secondary admin account created successfully' });
+  } catch (error) {
+    response.status(500).json({ message: error.message });
+  }
+});
+
+app.get('/api/auth/admins', async (request, response) => {
+  try {
+    const { username, token } = request.query;
+    if (!username || !token) {
+      response.status(400).json({ message: 'Missing parameters' });
+      return;
+    }
+
+    const usersCollection = getUsersCollection();
+    const requester = await usersCollection.findOne({ username: username.trim(), sessionToken: token });
+    if (!requester || requester.role !== 'Super Admin') {
+      response.status(403).json({ message: 'Unauthorized' });
+      return;
+    }
+
+    const users = await usersCollection.find(
+      {},
+      { projection: { _id: 0, passwordHash: 0, salt: 0, sessionToken: 0 } }
+    ).toArray();
+
+    response.json(users);
+  } catch (error) {
+    response.status(500).json({ message: error.message });
+  }
+});
+
+app.post('/api/auth/admins/delete/:adminUsername', async (request, response) => {
+  try {
+    const { adminUsername } = request.params;
+    const { username, token } = request.body || {};
+    
+    if (!username || !token) {
+      response.status(400).json({ message: 'Missing authorization details' });
+      return;
+    }
+
+    const usersCollection = getUsersCollection();
+    const requester = await usersCollection.findOne({ username: username.trim(), sessionToken: token });
+    if (!requester || requester.role !== 'Super Admin') {
+      response.status(403).json({ message: 'Unauthorized' });
+      return;
+    }
+
+    if (adminUsername === requester.username) {
+      response.status(400).json({ message: 'You cannot delete your own Super Admin account' });
+      return;
+    }
+
+    const targetUser = await usersCollection.findOne({ username: adminUsername });
+    if (targetUser && targetUser.role === 'Super Admin') {
+      response.status(400).json({ message: 'Cannot delete a Super Admin account' });
+      return;
+    }
+
+    const result = await usersCollection.deleteOne({ username: adminUsername });
+    response.json({ success: result.deletedCount > 0 });
+  } catch (error) {
+    response.status(500).json({ message: error.message });
+  }
 });
 
 app.use((error, _request, response, _next) => {
