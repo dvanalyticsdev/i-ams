@@ -8,10 +8,7 @@ import {
   Download, 
   Upload,
   X, 
-  Calendar, 
   IndianRupee, 
-  Briefcase, 
-  Layers, 
   ChevronLeft, 
   ChevronRight,
   TrendingUp,
@@ -22,9 +19,9 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { initializeDB, getExpenses, saveExpense, saveExpensesBulk, deleteExpense, deleteExpensesByImportBatch } from '../services/expenseService';
-import { DEFAULT_DEPARTMENTS, PAYMENT_MODES } from '../services/categories';
+import { DEFAULT_DEPARTMENTS, PAYMENT_MODES, syncDepartments, syncExpenseCategories } from '../services/categories';
 
-function ExpenseTracker({ categories, departments, showToast }) {
+function ExpenseTracker({ categories, departments, onCategoriesChange, onDepartmentsChange, showToast }) {
   // Database state
   const [expenses, setExpenses] = useState([]);
   
@@ -66,6 +63,7 @@ function ExpenseTracker({ categories, departments, showToast }) {
   const [formData, setFormData] = useState({
     expenseId: '',
     date: '',
+    taxYear: '',
     category: '',
     subCategory: '',
     amount: '',
@@ -118,6 +116,16 @@ function ExpenseTracker({ categories, departments, showToast }) {
       hour: '2-digit',
       minute: '2-digit'
     }).format(date);
+  };
+  const deriveTaxYear = (value) => {
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return '';
+    }
+
+    const year = date.getFullYear();
+    const startYear = date.getMonth() >= 3 ? year : year - 1;
+    return `${startYear}-${String((startYear + 1) % 100).padStart(2, '0')}`;
   };
   const getDefaultCategorySelection = () => {
     const firstCategory = availableCategories[0] || '';
@@ -175,10 +183,10 @@ function ExpenseTracker({ categories, departments, showToast }) {
     });
   }, [availableDepartments, categories, filterCategory, filterSubCategory, filterDept]);
 
-  const refreshExpenses = async () => {
+  async function refreshExpenses() {
     const nextExpenses = await initializeDB();
     setExpenses(nextExpenses);
-  };
+  }
 
   // Reset pagination when filters change
   useEffect(() => {
@@ -351,6 +359,7 @@ function ExpenseTracker({ categories, departments, showToast }) {
     setFormData({
       expenseId: '',
       date: getTodayDate(),
+      taxYear: deriveTaxYear(getTodayDate()),
       ...defaultCategorySelection,
       amount: '',
       invoiceNumber: '',
@@ -372,6 +381,7 @@ function ExpenseTracker({ categories, departments, showToast }) {
     setFormData({
       expenseId: expense.expenseId,
       date: expense.date,
+      taxYear: expense.taxYear || deriveTaxYear(expense.date),
       category: expense.category,
       subCategory: expense.subCategory,
       amount: expense.amount,
@@ -529,6 +539,7 @@ function ExpenseTracker({ categories, departments, showToast }) {
     const payload = {
       ...formData,
       date: formData.date || getTodayDate(),
+      taxYear: formData.taxYear.trim() || deriveTaxYear(formData.date || getTodayDate()),
       category: formData.category || defaultCategorySelection.category,
       subCategory: formData.subCategory || defaultCategorySelection.subCategory,
       paymentMode: formData.paymentMode || PAYMENT_MODES[0],
@@ -559,6 +570,7 @@ function ExpenseTracker({ categories, departments, showToast }) {
       'Expense ID': expense.expenseId,
       'Invoice Number': expense.invoiceNumber || '',
       Date: expense.date,
+      'Tax Year': expense.taxYear || deriveTaxYear(expense.date),
       Category: expense.category,
       'Sub-Category': expense.subCategory,
       Amount: expense.amount,
@@ -615,6 +627,22 @@ function ExpenseTracker({ categories, departments, showToast }) {
   const normalizeHeader = (header) => String(header).trim().toLowerCase().replace(/[^a-z0-9]/g, '');
   const monthHeaderPattern = /^[A-Za-z]{3}\/\d{2}$/;
   const hasAnyHeader = (headers, aliases) => aliases.some((alias) => headers.includes(alias));
+  const inferDepartmentFromCategory = (category) => {
+    const normalizedCategory = normalizeHeader(category);
+    const categoryDefaults = {
+      administration: 'Operations',
+      finance: 'Finance',
+      hrm: 'HR',
+      marketing: 'Marketing',
+      operation: 'Operations',
+      others: 'Operations',
+      salary: 'HR',
+      sales: 'Sales',
+      software: 'Engineering'
+    };
+
+    return categoryDefaults[normalizedCategory] || '';
+  };
   const buildNormalizedCategoryMaps = () => {
     const normalizedCategoryLookup = new Map();
     const normalizedSubCategoryLookup = new Map();
@@ -697,6 +725,95 @@ function ExpenseTracker({ categories, departments, showToast }) {
       subCategory: String(label || '').trim()
     };
   };
+  const inferDepartmentValue = (expenseLike, existingExpenses = []) => {
+    const directDepartment = String(expenseLike.department || '').trim();
+    if (directDepartment) {
+      return directDepartment;
+    }
+
+    const counts = new Map();
+    const register = (value, weight = 1) => {
+      if (!value) {
+        return;
+      }
+      counts.set(value, (counts.get(value) || 0) + weight);
+    };
+
+    const normalizedCategory = normalizeHeader(expenseLike.category);
+    const normalizedSubCategory = normalizeHeader(expenseLike.subCategory);
+    const normalizedEmployeeName = normalizeHeader(expenseLike.employeeName);
+    const normalizedApprovedBy = normalizeHeader(expenseLike.approvedBy);
+
+    existingExpenses.forEach((expense) => {
+      const department = String(expense.department || '').trim();
+      if (!department) {
+        return;
+      }
+
+      if (normalizedCategory && normalizeHeader(expense.category) === normalizedCategory) {
+        register(department, 2);
+      }
+      if (normalizedSubCategory && normalizeHeader(expense.subCategory) === normalizedSubCategory) {
+        register(department, 3);
+      }
+      if (
+        normalizedCategory &&
+        normalizedSubCategory &&
+        normalizeHeader(expense.category) === normalizedCategory &&
+        normalizeHeader(expense.subCategory) === normalizedSubCategory
+      ) {
+        register(department, 5);
+      }
+      if (normalizedEmployeeName && normalizeHeader(expense.employeeName) === normalizedEmployeeName) {
+        register(department, 4);
+      }
+      if (normalizedApprovedBy && normalizeHeader(expense.approvedBy) === normalizedApprovedBy) {
+        register(department, 2);
+      }
+    });
+
+    const inferredDepartment = [...counts.entries()]
+      .sort((left, right) => right[1] - left[1])
+      .map(([department]) => department)
+      .find((department) => availableDepartments.includes(department));
+    if (inferredDepartment) {
+      return inferredDepartment;
+    }
+
+    const fallbackDepartment = inferDepartmentFromCategory(expenseLike.category);
+    if (fallbackDepartment && availableDepartments.includes(fallbackDepartment)) {
+      return fallbackDepartment;
+    }
+
+    return availableDepartments[0] || '';
+  };
+  const mergeImportMetadata = (rows) => {
+    const mergedCategories = Object.fromEntries(
+      Object.entries(categories).map(([categoryName, subCategoryList]) => [categoryName, [...subCategoryList]])
+    );
+    const mergedDepartments = [...availableDepartments];
+
+    rows.forEach((row) => {
+      const categoryName = String(row.category || '').trim();
+      const subCategoryName = String(row.subCategory || '').trim();
+      const departmentName = String(row.department || '').trim();
+
+      if (categoryName && !mergedCategories[categoryName]) {
+        mergedCategories[categoryName] = [];
+      }
+      if (categoryName && subCategoryName && !mergedCategories[categoryName].includes(subCategoryName)) {
+        mergedCategories[categoryName].push(subCategoryName);
+      }
+      if (departmentName && !mergedDepartments.includes(departmentName)) {
+        mergedDepartments.push(departmentName);
+      }
+    });
+
+    return {
+      mergedCategories,
+      mergedDepartments
+    };
+  };
 
   const isLeafDetailLabel = (label) => /^\s*[0-9-]/.test(label);
   const cleanLeafDetailLabel = (label) => String(label).replace(/^\s*[0-9-]+/, '').trim();
@@ -739,13 +856,14 @@ function ExpenseTracker({ categories, departments, showToast }) {
       expensesFromRow.push({
         expenseId: '',
         date: resolveMonthHeaderDate(header) || getTodayDate(),
+        taxYear: deriveTaxYear(resolveMonthHeaderDate(header) || getTodayDate()),
         category,
         subCategory,
         amount,
         invoiceNumber: '',
         paymentMode: PAYMENT_MODES[0],
         vendorName: isFacultyFee ? '' : vendorName,
-        department: availableDepartments[0],
+        department: inferDepartmentValue({ category, subCategory, employeeName, approvedBy }, expenses),
         employeeName: isFacultyFee ? (employeeName || vendorName) : employeeName,
         approvedBy,
         description: `Imported from ${sheetName} - ${String(header).trim()}`,
@@ -903,7 +1021,12 @@ function ExpenseTracker({ categories, departments, showToast }) {
       ''
     ).trim();
     const paymentMode = String(normalizedRow.paymentmode || normalizedRow.mode || PAYMENT_MODES[0]).trim();
-    const department = String(normalizedRow.department || normalizedRow.dept || availableDepartments[0]).trim();
+    const directDepartment = String(
+      normalizedRow.department ||
+      normalizedRow.dept ||
+      normalizedRow.departmentname ||
+      ''
+    ).trim();
     const vendorName = String(normalizedRow.vendorname || normalizedRow.vendor || '').trim();
     const employeeName = String(
       normalizedRow.employeename ||
@@ -913,24 +1036,36 @@ function ExpenseTracker({ categories, departments, showToast }) {
       ''
     ).trim();
     const approvedBy = String(normalizedRow.approvedby || '').trim();
-    const description = String(normalizedRow.description || '').trim();
+    const description = String(normalizedRow.description || normalizedRow.descriptions || '').trim();
+    const taxYear = String(normalizedRow.taxyear || normalizedRow.financialyear || '').trim();
 
     if (Number.isNaN(amount) || amount <= 0) {
       throw new Error('Amount must be a positive number');
     }
 
     const resolvedDate = resolveDateValue(normalizedRow.date);
+    const resolvedDepartment = inferDepartmentValue(
+      {
+        category,
+        subCategory,
+        employeeName,
+        approvedBy,
+        department: directDepartment
+      },
+      expenses
+    );
 
     return {
       expenseId: String(normalizedRow.expenseid || normalizedRow.id || '').trim(),
       date: resolvedDate || getTodayDate(),
+      taxYear: taxYear || deriveTaxYear(resolvedDate || getTodayDate()),
       category,
       subCategory,
       amount,
       invoiceNumber,
       paymentMode: PAYMENT_MODES.includes(paymentMode) ? paymentMode : PAYMENT_MODES[0],
       vendorName,
-      department: availableDepartments.includes(department) ? department : availableDepartments[0],
+      department: resolvedDepartment,
       employeeName,
       approvedBy,
       description,
@@ -960,6 +1095,12 @@ function ExpenseTracker({ categories, departments, showToast }) {
         showToast('Import file does not contain any importable expense rows', 'warning');
         return;
       }
+
+      const { mergedCategories, mergedDepartments } = mergeImportMetadata(parsedExpenses);
+      const syncedCategories = await syncExpenseCategories(mergedCategories);
+      const syncedDepartments = await syncDepartments(mergedDepartments);
+      onCategoriesChange?.(syncedCategories);
+      onDepartmentsChange?.(syncedDepartments);
 
       const nextExpenses = await saveExpensesBulk(parsedExpenses, {
         importBatchId: `import-${Date.now()}`,
@@ -1002,14 +1143,6 @@ function ExpenseTracker({ categories, departments, showToast }) {
       currency: 'INR',
       maximumFractionDigits: 0
     }).format(val);
-  };
-
-  const sortIndicator = (field) => {
-    if (sortField !== field) {
-      return '';
-    }
-
-    return sortDirection === 'asc' ? ' ^' : ' v';
   };
 
   return (
@@ -1295,6 +1428,7 @@ function ExpenseTracker({ categories, departments, showToast }) {
               <th className="text-left">Expense By</th>
               <th className="text-left">Category</th>
               <th className="text-left">Sub-Category</th>
+              <th>Tax Year</th>
               <th onClick={() => handleSort('amount')} style={{ cursor: 'pointer' }}>
                 Amount {sortField === 'amount' && (sortDirection === 'asc' ? '▲' : '▼')}
               </th>
@@ -1307,7 +1441,7 @@ function ExpenseTracker({ categories, departments, showToast }) {
           <tbody>
             {currentRows.length === 0 ? (
               <tr>
-                <td colSpan="12" style={{ padding: '40px', color: 'var(--text-muted)' }}>
+                <td colSpan="13" style={{ padding: '40px', color: 'var(--text-muted)' }}>
                   <AlertCircle size={32} style={{ display: 'block', margin: '0 auto 10px', color: 'var(--text-muted)' }} />
                   No matching expense claims found in this directory.
                 </td>
@@ -1336,6 +1470,7 @@ function ExpenseTracker({ categories, departments, showToast }) {
                   <td className="text-left" style={{ fontWeight: 600 }}>{row.employeeName}</td>
                   <td className="text-left" style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{row.category}</td>
                   <td className="text-left" style={{ fontWeight: 500 }}>{row.subCategory}</td>
+                  <td>{row.taxYear || deriveTaxYear(row.date) || '-'}</td>
                   <td style={{ fontWeight: 700 }}>{formatCurrency(row.amount)}</td>
                   <td>{row.paymentMode}</td>
                   <td className="text-left" style={{ maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -1492,6 +1627,16 @@ function ExpenseTracker({ categories, departments, showToast }) {
                     name="date" 
                     value={formData.date} 
                     onChange={handleFormChange}
+                  />
+                </div>
+                <div>
+                  <label>Tax Year</label>
+                  <input
+                    type="text"
+                    name="taxYear"
+                    value={formData.taxYear}
+                    onChange={handleFormChange}
+                    placeholder="e.g. 2026-27"
                   />
                 </div>
                 <div>
@@ -1665,6 +1810,10 @@ function ExpenseTracker({ categories, departments, showToast }) {
               <div>
                 <span style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>Sub-Category</span>
                 <div style={{ fontWeight: 600, marginTop: '2px' }}>{selectedExpense.subCategory}</div>
+              </div>
+              <div>
+                <span style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>Tax Year</span>
+                <div style={{ marginTop: '2px' }}>{selectedExpense.taxYear || deriveTaxYear(selectedExpense.date) || 'Not provided'}</div>
               </div>
               <div>
                 <span style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>Invoice Number</span>

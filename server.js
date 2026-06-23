@@ -41,6 +41,7 @@ const sanitizeExpense = (expense) => {
   const sanitized = {
     expenseId: String(expense.expenseId || '').trim(),
     date: String(expense.date || '').trim(),
+    taxYear: String(expense.taxYear || '').trim(),
     category: String(expense.category || '').trim(),
     subCategory: String(expense.subCategory || '').trim(),
     amount: Number(expense.amount),
@@ -507,6 +508,15 @@ app.post('/api/departments', async (request, response) => {
   }
 });
 
+app.put('/api/departments', async (request, response) => {
+  try {
+    const departments = Array.isArray(request.body?.departments) ? request.body.departments : [];
+    response.json(await saveDepartmentsDocument(departments));
+  } catch (error) {
+    response.status(400).json({ message: error.message });
+  }
+});
+
 app.delete('/api/departments/:departmentName', async (request, response) => {
   const departmentName = request.params.departmentName;
   const current = (await getDepartmentsDocument()).departments;
@@ -527,6 +537,19 @@ app.post('/api/categories', async (request, response) => {
 
     current[categoryName] = [];
     response.status(201).json(await saveCategoriesDocument(current));
+  } catch (error) {
+    response.status(400).json({ message: error.message });
+  }
+});
+
+app.put('/api/categories', async (request, response) => {
+  try {
+    const categories = request.body?.categories;
+    if (!categories || typeof categories !== 'object' || Array.isArray(categories)) {
+      throw new Error('Categories payload is required');
+    }
+
+    response.json(await saveCategoriesDocument(categories));
   } catch (error) {
     response.status(400).json({ message: error.message });
   }

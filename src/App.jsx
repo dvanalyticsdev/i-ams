@@ -394,6 +394,8 @@ function App() {
             <ExpenseTracker
               categories={categories}
               departments={departments}
+              onCategoriesChange={setCategories}
+              onDepartmentsChange={setDepartments}
               showToast={showToast}
             />
           )}

@@ -117,3 +117,38 @@ export const removeDepartment = async (departmentName) => {
 
   return writeDepartmentCache(departments);
 };
+
+export const syncExpenseCategories = async (categories) => {
+  const normalized = Object.fromEntries(
+    Object.entries(categories || {})
+      .map(([categoryName, subCategories]) => [
+        String(categoryName).trim(),
+        [...new Set((subCategories || []).map((subCategory) => String(subCategory).trim()).filter(Boolean))],
+      ])
+      .filter(([categoryName]) => Boolean(categoryName))
+  );
+
+  try {
+    const saved = await apiRequest('/categories', {
+      method: 'PUT',
+      body: JSON.stringify({ categories: normalized }),
+    });
+    return writeCategoryCache(saved);
+  } catch {
+    return writeCategoryCache(normalized);
+  }
+};
+
+export const syncDepartments = async (departments) => {
+  const normalized = [...new Set((departments || []).map((department) => String(department).trim()).filter(Boolean))];
+
+  try {
+    const saved = await apiRequest('/departments', {
+      method: 'PUT',
+      body: JSON.stringify({ departments: normalized }),
+    });
+    return writeDepartmentCache(saved);
+  } catch {
+    return writeDepartmentCache(normalized);
+  }
+};
