@@ -240,6 +240,10 @@ function Dashboard({ categories, departments, showToast }) {
           fill={labelColor} fontSize={9} fontFamily="inherit">
           {amt}
         </text>
+        <text x={x2 + (textAnchor === 'start' ? 4 : -4)} y={y2 + 19} textAnchor={textAnchor}
+          fill={labelColor} fontSize={9} fontWeight={600} fontFamily="inherit">
+          {name}
+        </text>
       </g>
     );
   };
@@ -594,7 +598,6 @@ function Dashboard({ categories, departments, showToast }) {
               </PieChart>
             )}
           </ChartSurface>
-          {renderNumberedLegend(charts.categoryBreakdown, 0)}
         </div>
 
         {/* Chart 3: Department-wise Expenses */}
