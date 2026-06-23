@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { UserPlus, Trash2, RefreshCw, AlertCircle, Shield, Calendar, User } from 'lucide-react';
+import { UserPlus, Trash2, RefreshCw, AlertCircle, Shield, Calendar, User, Lock } from 'lucide-react';
 import { apiRequest } from '../services/api';
 
 function AdminManagement({ user, showToast }) {
