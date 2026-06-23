@@ -165,7 +165,7 @@ function ExpenseTracker({ categories, departments, onCategoriesChange, onDepartm
       }
 
       if (prev.subCategory && categories[prev.category]?.includes(prev.subCategory)) {
-        if (prev.department && availableDepartments.includes(prev.department)) {
+        if (!prev.department || availableDepartments.includes(prev.department)) {
           return prev;
         }
 
@@ -178,7 +178,9 @@ function ExpenseTracker({ categories, departments, onCategoriesChange, onDepartm
       return {
         ...prev,
         subCategory: categories[prev.category]?.[0] || '',
-        department: availableDepartments.includes(prev.department) ? prev.department : (availableDepartments[0] || '')
+        department: prev.department
+          ? (availableDepartments.includes(prev.department) ? prev.department : (availableDepartments[0] || ''))
+          : ''
       };
     });
   }, [availableDepartments, categories, filterCategory, filterSubCategory, filterDept]);
@@ -542,8 +544,8 @@ function ExpenseTracker({ categories, departments, onCategoriesChange, onDepartm
       taxYear: formData.taxYear.trim() || deriveTaxYear(formData.date || getTodayDate()),
       category: formData.category || defaultCategorySelection.category,
       subCategory: formData.subCategory || defaultCategorySelection.subCategory,
-      paymentMode: formData.paymentMode || PAYMENT_MODES[0],
-      department: formData.department || availableDepartments[0],
+      paymentMode: formData.paymentMode,
+      department: formData.department,
       invoiceNumber: formData.invoiceNumber.trim(),
       vendorName: formData.vendorName.trim(),
       employeeName: formData.employeeName.trim(),
@@ -785,7 +787,7 @@ function ExpenseTracker({ categories, departments, onCategoriesChange, onDepartm
       return fallbackDepartment;
     }
 
-    return availableDepartments[0] || '';
+    return '';
   };
   const mergeImportMetadata = (rows) => {
     const mergedCategories = Object.fromEntries(
@@ -861,7 +863,7 @@ function ExpenseTracker({ categories, departments, onCategoriesChange, onDepartm
         subCategory,
         amount,
         invoiceNumber: '',
-        paymentMode: PAYMENT_MODES[0],
+        paymentMode: '',
         vendorName: isFacultyFee ? '' : vendorName,
         department: inferDepartmentValue({ category, subCategory, employeeName, approvedBy }, expenses),
         employeeName: isFacultyFee ? (employeeName || vendorName) : employeeName,
@@ -1020,7 +1022,7 @@ function ExpenseTracker({ categories, departments, onCategoriesChange, onDepartm
       normalizedRow.invoice ||
       ''
     ).trim();
-    const paymentMode = String(normalizedRow.paymentmode || normalizedRow.mode || PAYMENT_MODES[0]).trim();
+    const paymentMode = String(normalizedRow.paymentmode || normalizedRow.mode || '').trim();
     const directDepartment = String(
       normalizedRow.department ||
       normalizedRow.dept ||
@@ -1063,7 +1065,7 @@ function ExpenseTracker({ categories, departments, onCategoriesChange, onDepartm
       subCategory,
       amount,
       invoiceNumber,
-      paymentMode: PAYMENT_MODES.includes(paymentMode) ? paymentMode : PAYMENT_MODES[0],
+      paymentMode: PAYMENT_MODES.includes(paymentMode) ? paymentMode : '',
       vendorName,
       department: resolvedDepartment,
       employeeName,
@@ -1720,6 +1722,7 @@ function ExpenseTracker({ categories, departments, onCategoriesChange, onDepartm
                 <div>
                   <label>Department</label>
                   <select name="department" value={formData.department} onChange={handleFormChange}>
+                    <option value="">Blank</option>
                     {availableDepartments.map(dept => (
                       <option key={dept} value={dept}>{dept}</option>
                     ))}
@@ -1741,6 +1744,7 @@ function ExpenseTracker({ categories, departments, onCategoriesChange, onDepartm
                 <div>
                   <label>Payment Mode</label>
                   <select name="paymentMode" value={formData.paymentMode} onChange={handleFormChange}>
+                    <option value="">Blank</option>
                     {PAYMENT_MODES.map(mode => (
                       <option key={mode} value={mode}>{mode}</option>
                     ))}
