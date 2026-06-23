@@ -7,6 +7,7 @@ import {
   X, 
   CheckCircle2, 
   AlertCircle,
+  Activity,
   LogOut,
   Sun,
   Moon,
@@ -17,6 +18,7 @@ import { getInitialTheme, applyTheme } from './theme';
 import { initializeDB } from './services/expenseService';
 import { getDepartments, getExpenseCategories, initializeDepartments, initializeExpenseCategories } from './services/categories';
 import Dashboard from './components/Dashboard';
+import BalanceCheck from './components/BalanceCheck';
 import ExpenseTracker from './components/ExpenseTracker';
 import CategoryManagement from './components/CategoryManagement';
 import Login from './components/Login';
@@ -161,6 +163,10 @@ function App() {
       title: 'Ledger Board',
       subtitle: 'Track spend movement, trends, and the latest accounting activity.'
     },
+    balanceCheck: {
+      title: 'Balance Check',
+      subtitle: 'Review daily balances, manual ledger movements, and range-based closing trends.'
+    },
     tracker: {
       title: 'Expense Directory',
       subtitle: 'Manage claims, imports, filters, and record-level accounting actions.'
@@ -234,6 +240,19 @@ function App() {
           >
             <LayoutDashboard size={16} />
             <span>Dashboard</span>
+          </button>
+
+          <button
+            type="button"
+            className={`nav-item ${activeTab === 'balanceCheck' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveTab('balanceCheck');
+              setSidebarOpen(false);
+            }}
+            aria-current={activeTab === 'balanceCheck' ? 'page' : undefined}
+          >
+            <Activity size={16} />
+            <span>Balance Check</span>
           </button>
 
           <button
@@ -375,6 +394,10 @@ function App() {
             <Dashboard
               categories={categories}
               departments={departments}
+              showToast={showToast}
+            />
+          ) : activeTab === 'balanceCheck' ? (
+            <BalanceCheck
               showToast={showToast}
             />
           ) : activeTab === 'categories' ? (
