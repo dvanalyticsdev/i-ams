@@ -80,6 +80,18 @@ const getDateRangeBounds = (rangeType, customStart = null, customEnd = null) => 
     case 'ytd':
       start = new Date(today.getFullYear(), 0, 1);
       break;
+    case 'fy': {
+      const fyMonth = today.getMonth();
+      const fyYear = today.getFullYear();
+      if (fyMonth < 3) {
+        start = startOfDay(new Date(fyYear - 1, 3, 1));
+        end = endOfDay(new Date(fyYear, 2, 31));
+      } else {
+        start = startOfDay(new Date(fyYear, 3, 1));
+        end = endOfDay(new Date(fyYear + 1, 2, 31));
+      }
+      break;
+    }
     case 'custom':
       if (customStart) {
         start = startOfDay(new Date(customStart));

@@ -222,6 +222,7 @@ function BalanceCheck({ showToast }) {
               <option value="3months">Last 90 Days</option>
               <option value="6months">Last 6 Months</option>
               <option value="ytd">Year to Date</option>
+              <option value="fy">Financial Year</option>
               <option value="custom">Custom Range</option>
             </select>
             <button type="button" className="btn btn-secondary" onClick={handleResetRange}>
