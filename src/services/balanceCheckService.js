@@ -54,6 +54,13 @@ const getDateRangeBounds = (rangeType, customStart = null, customEnd = null) => 
   let start = startOfDay(new Date());
   let end = new Date(today);
 
+  if (rangeType && rangeType.startsWith('fy_')) {
+    const startYear = parseInt(rangeType.split('_')[1], 10);
+    start = startOfDay(new Date(startYear, 3, 1));
+    end = endOfDay(new Date(startYear + 1, 2, 31));
+    return { start, end };
+  }
+
   switch (rangeType) {
     case 'today':
       break;

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { Activity, Eye, Pencil, Trash2, Wallet } from 'lucide-react';
 import { deleteBalanceEntry, getBalanceCheckAnalytics, getBalanceEntries, saveBalanceEntry } from '../services/balanceCheckService';
+import { getFinancialYears } from '../services/expenseService';
 
 function ChartSurface({ minHeight, children }) {
   const containerRef = useRef(null);
@@ -61,6 +62,7 @@ function BalanceCheck({ showToast }) {
   const [entries, setEntries] = useState(getBalanceEntries());
   const [analytics, setAnalytics] = useState(() => getBalanceCheckAnalytics('month'));
   const [editingEntryId, setEditingEntryId] = useState('');
+  const financialYears = getFinancialYears();
   const [formData, setFormData] = useState({
     entryId: '',
     date: '',
@@ -221,8 +223,10 @@ function BalanceCheck({ showToast }) {
               <option value="month">Last 30 Days</option>
               <option value="3months">Last 90 Days</option>
               <option value="6months">Last 6 Months</option>
-              <option value="ytd">Year to Date</option>
-              <option value="fy">Financial Year</option>
+               <option value="ytd">Year to Date</option>
+              {financialYears.map((fy) => (
+                <option key={fy.value} value={fy.value}>{fy.label}</option>
+              ))}
               <option value="custom">Custom Range</option>
             </select>
             <button type="button" className="btn btn-secondary" onClick={handleResetRange}>

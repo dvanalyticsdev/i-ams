@@ -67,6 +67,25 @@ const withLocalExpenseDefaults = (expense, existingExpenses = []) => {
   return nextExpense;
 };
 
+export const getFinancialYears = () => {
+  const today = new Date();
+  const currentMonth = today.getMonth();
+  const currentYear = today.getFullYear();
+  const currentFYStartYear = currentMonth < 3 ? currentYear - 1 : currentYear;
+  
+  const list = [];
+  for (let i = 0; i < 5; i++) {
+    const startYear = currentFYStartYear - i;
+    const endYear = startYear + 1;
+    const endYearShort = String(endYear).slice(-2);
+    list.push({
+      value: `fy_${startYear}`,
+      label: `FY ${startYear}-${endYearShort}`,
+    });
+  }
+  return list;
+};
+
 export const initializeDB = async () => {
   if (typeof window !== 'undefined') {
     for (const key of LEGACY_KEYS) {
@@ -184,6 +203,13 @@ const getDateRangeBounds = (rangeType, customStart = null, customEnd = null) => 
   const today = endOfDay(new Date());
   let start = startOfDay(new Date());
   let end = new Date(today);
+
+  if (rangeType && rangeType.startsWith('fy_')) {
+    const startYear = parseInt(rangeType.split('_')[1], 10);
+    start = startOfDay(new Date(startYear, 3, 1));
+    end = endOfDay(new Date(startYear + 1, 2, 31));
+    return { start, end };
+  }
 
   switch (rangeType) {
     case 'today':
@@ -303,7 +329,7 @@ const detectTrendGranularity = (rangeType, start, end) => {
     return 'week';
   }
 
-  if (rangeType === '3months' || rangeType === '6months' || rangeType === 'ytd' || rangeType === 'fy') {
+  if (rangeType === '3months' || rangeType === '6months' || rangeType === 'ytd' || rangeType === 'fy' || (rangeType && rangeType.startsWith('fy_'))) {
     return 'month';
   }
 
@@ -491,8 +517,15 @@ const getRangeMeta = (rangeType, granularity) => {
     month: 'months',
   };
 
+  let timelineLabel = labelsByRange[rangeType] || 'Selected Range';
+  if (rangeType && rangeType.startsWith('fy_')) {
+    const startYear = parseInt(rangeType.split('_')[1], 10);
+    const endYearShort = String(startYear + 1).slice(-2);
+    timelineLabel = `FY ${startYear}-${endYearShort}`;
+  }
+
   return {
-    timelineLabel: labelsByRange[rangeType] || 'Selected Range',
+    timelineLabel,
     trendTitle: `${groupLabelByGranularity[granularity]} Spend Trend`,
     distributionTitle: `${groupLabelByGranularity[granularity]} Spend Distribution`,
     forecastTitle: `${groupLabelByGranularity[granularity]} Spending Forecast`,

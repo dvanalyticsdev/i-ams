@@ -30,7 +30,7 @@ import {
   RefreshCw,
   FileText
 } from 'lucide-react';
-import { getExpenses } from '../services/expenseService';
+import { getExpenses, getFinancialYears } from '../services/expenseService';
 import { getDashboardAnalytics } from '../services/expenseService';
 
 function ChartSurface({ minHeight, children }) {
@@ -101,6 +101,7 @@ function Dashboard({ categories, departments, showToast }) {
   const [analytics, setAnalytics] = useState(null);
   const [currentTheme, setCurrentTheme] = useState('light');
   const expenses = getExpenses();
+  const financialYears = getFinancialYears();
   const categoryNames = Object.keys(categories);
   const availableSubCategories = filterCategory ? (categories[filterCategory] || []) : [];
   const expenseByOptions = [...new Set(
@@ -345,7 +346,9 @@ function Dashboard({ categories, departments, showToast }) {
               <option value="3months">Last 90 Days</option>
               <option value="6months">Last 6 Months</option>
               <option value="ytd">Year to Date</option>
-              <option value="fy">Financial Year</option>
+              {financialYears.map((fy) => (
+                <option key={fy.value} value={fy.value}>{fy.label}</option>
+              ))}
               <option value="custom">Custom Range</option>
             </select>
           </div>
