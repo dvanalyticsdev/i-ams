@@ -161,6 +161,15 @@ function BalanceCheck({ showToast }) {
     showToast('Balance entry deleted successfully', 'success');
   };
 
+  const handleTimelineChange = (event) => {
+    const val = event.target.value;
+    if (val === 'fy') {
+      setRangeType(financialYears[0]?.value || 'fy');
+    } else {
+      setRangeType(val);
+    }
+  };
+
   const handleResetRange = () => {
     setRangeType('month');
     setStartDate('');
@@ -215,7 +224,7 @@ function BalanceCheck({ showToast }) {
             <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Trendline follows the selected date range on this page.</div>
           </div>
           <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            <select value={rangeType} onChange={(event) => setRangeType(event.target.value)} style={{ minWidth: '140px' }}>
+            <select value={rangeType.startsWith('fy_') ? 'fy' : rangeType} onChange={handleTimelineChange} style={{ minWidth: '140px' }}>
               <option value="today">Today</option>
               <option value="currentWeek">This Week</option>
               <option value="week">Last 7 Days</option>
@@ -223,12 +232,17 @@ function BalanceCheck({ showToast }) {
               <option value="month">Last 30 Days</option>
               <option value="3months">Last 90 Days</option>
               <option value="6months">Last 6 Months</option>
-               <option value="ytd">Year to Date</option>
-              {financialYears.map((fy) => (
-                <option key={fy.value} value={fy.value}>{fy.label}</option>
-              ))}
+              <option value="ytd">Year to Date</option>
+              <option value="fy">Financial Year</option>
               <option value="custom">Custom Range</option>
             </select>
+            {rangeType.startsWith('fy_') ? (
+              <select value={rangeType} onChange={(event) => setRangeType(event.target.value)} style={{ minWidth: '140px' }}>
+                {financialYears.map((fy) => (
+                  <option key={fy.value} value={fy.value}>{fy.label}</option>
+                ))}
+              </select>
+            ) : null}
             <button type="button" className="btn btn-secondary" onClick={handleResetRange}>
               Reset
             </button>

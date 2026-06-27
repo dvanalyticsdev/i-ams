@@ -306,6 +306,15 @@ function Dashboard({ categories, departments, showToast }) {
     showToast("Applied custom date range filter", "success");
   };
 
+  const handleTimelineChange = (event) => {
+    const val = event.target.value;
+    if (val === 'fy') {
+      setRangeType(financialYears[0]?.value || 'fy');
+    } else {
+      setRangeType(val);
+    }
+  };
+
   const handleResetFilters = () => {
     setRangeType('month');
     setStartDate('');
@@ -337,7 +346,7 @@ function Dashboard({ categories, departments, showToast }) {
         <div className="filter-grid" style={{ borderTop: '1px solid var(--border)', paddingTop: '10px' }}>
           <div>
             <label>Timeline</label>
-            <select value={rangeType} onChange={(event) => setRangeType(event.target.value)}>
+             <select value={rangeType.startsWith('fy_') ? 'fy' : rangeType} onChange={handleTimelineChange}>
               <option value="today">Today</option>
               <option value="currentWeek">This Week</option>
               <option value="week">Last 7 Days</option>
@@ -346,12 +355,21 @@ function Dashboard({ categories, departments, showToast }) {
               <option value="3months">Last 90 Days</option>
               <option value="6months">Last 6 Months</option>
               <option value="ytd">Year to Date</option>
-              {financialYears.map((fy) => (
-                <option key={fy.value} value={fy.value}>{fy.label}</option>
-              ))}
+              <option value="fy">Financial Year</option>
               <option value="custom">Custom Range</option>
             </select>
           </div>
+
+          {rangeType.startsWith('fy_') ? (
+            <div>
+              <label>Select Year</label>
+              <select value={rangeType} onChange={(event) => setRangeType(event.target.value)}>
+                {financialYears.map((fy) => (
+                  <option key={fy.value} value={fy.value}>{fy.label}</option>
+                ))}
+              </select>
+            </div>
+          ) : null}
 
           <div>
             <label>Category</label>
