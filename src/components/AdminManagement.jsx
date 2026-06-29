@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { UserPlus, Trash2, RefreshCw, AlertCircle, Shield, Calendar, User, Lock } from 'lucide-react';
+import { UserPlus, Trash2, RefreshCw, AlertCircle, Shield, Calendar, User, Lock, Key, Eye, EyeOff } from 'lucide-react';
 import { apiRequest } from '../services/api';
 
 function AdminManagement({ user, showToast }) {
   const [admins, setAdmins] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [passwordModalTarget, setPasswordModalTarget] = useState(null);
 
   // New Admin Form State
   const [newUsername, setNewUsername] = useState('');
@@ -14,6 +15,14 @@ function AdminManagement({ user, showToast }) {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [formError, setFormError] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+
+  // Change Password Form State
+  const [resetPassword, setResetPassword] = useState('');
+  const [resetConfirmPassword, setResetConfirmPassword] = useState('');
+  const [passwordFormError, setPasswordFormError] = useState('');
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
+  const [showResetPassword, setShowResetPassword] = useState(false);
+  const [showResetConfirmPassword, setShowResetConfirmPassword] = useState(false);
 
   // Fetch Admins List (used for user-triggered events like creation/deletion)
   const fetchAdmins = async () => {
@@ -138,6 +147,73 @@ function AdminManagement({ user, showToast }) {
     }
   };
 
+  const resetPasswordModalState = () => {
+    setPasswordModalTarget(null);
+    setResetPassword('');
+    setResetConfirmPassword('');
+    setPasswordFormError('');
+    setShowResetPassword(false);
+    setShowResetConfirmPassword(false);
+    setIsUpdatingPassword(false);
+  };
+
+  const handleOpenPasswordModal = (admin) => {
+    setPasswordFormError('');
+    setResetPassword('');
+    setResetConfirmPassword('');
+    setShowResetPassword(false);
+    setShowResetConfirmPassword(false);
+    setPasswordModalTarget(admin);
+  };
+
+  const handleChangeAdminPassword = async (e) => {
+    e.preventDefault();
+    setPasswordFormError('');
+
+    if (!passwordModalTarget) {
+      return;
+    }
+    if (!resetPassword.trim()) {
+      setPasswordFormError('New password is required.');
+      return;
+    }
+    if (resetPassword.trim().length < 6) {
+      setPasswordFormError('Password must be at least 6 characters.');
+      return;
+    }
+    if (resetPassword !== resetConfirmPassword) {
+      setPasswordFormError('Passwords do not match.');
+      return;
+    }
+
+    setIsUpdatingPassword(true);
+
+    try {
+      const result = await apiRequest(`/auth/admins/change-password/${encodeURIComponent(passwordModalTarget.username)}`, {
+        method: 'POST',
+        body: JSON.stringify({
+          username: user.username,
+          token: user.sessionToken,
+          newPassword: resetPassword.trim()
+        })
+      });
+
+      showToast(
+        passwordModalTarget.username === user.username
+          ? 'Your Super Admin password was updated successfully.'
+          : `Password updated for "${passwordModalTarget.username}". They will be asked to change it after login.`,
+        'success'
+      );
+      resetPasswordModalState();
+      if (result?.message) {
+        fetchAdmins();
+      }
+    } catch (err) {
+      setPasswordFormError(err.message || 'Failed to update password.');
+      setIsUpdatingPassword(false);
+    }
+  };
+
   return (
     <div className="admin-management-container" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       
@@ -253,23 +329,39 @@ function AdminManagement({ user, showToast }) {
                         </div>
                       </td>
                       <td style={{ textAlign: 'right', paddingRight: '20px' }}>
-                        {admin.username !== user.username && admin.role !== 'Super Admin' ? (
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
                           <button
                             className="btn btn-secondary btn-icon"
-                            onClick={() => handleDeleteAdmin(admin.username)}
+                            onClick={() => handleOpenPasswordModal(admin)}
                             style={{
-                              color: 'var(--danger)',
+                              color: 'var(--primary)',
                               border: '1px solid transparent',
                               padding: '6px',
                               borderRadius: 'var(--radius-sm)'
                             }}
-                            title="Delete Admin Account"
+                            title={admin.username === user.username ? 'Change Your Password' : 'Set Admin Password'}
                           >
-                            <Trash2 size={15} />
+                            <Key size={15} />
                           </button>
-                        ) : (
-                          <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic' }}>Protected</span>
-                        )}
+
+                          {admin.username !== user.username && admin.role !== 'Super Admin' ? (
+                            <button
+                              className="btn btn-secondary btn-icon"
+                              onClick={() => handleDeleteAdmin(admin.username)}
+                              style={{
+                                color: 'var(--danger)',
+                                border: '1px solid transparent',
+                                padding: '6px',
+                                borderRadius: 'var(--radius-sm)'
+                              }}
+                              title="Delete Admin Account"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          ) : (
+                            <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic' }}>Protected</span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -384,6 +476,157 @@ function AdminManagement({ user, showToast }) {
                     </>
                   ) : (
                     <span>Register Admin</span>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {passwordModalTarget && (
+        <div className="dialog-backdrop">
+          <div className="card dialog-card dialog-card--sm" role="dialog" aria-modal="true" aria-label="Change Administrator Password">
+            <div className="dialog-header">
+              <h2 className="dialog-title">
+                {passwordModalTarget.username === user.username ? 'Update Super Admin Password' : `Set Password for ${passwordModalTarget.name}`}
+              </h2>
+              <button
+                className="dialog-close"
+                onClick={resetPasswordModalState}
+                disabled={isUpdatingPassword}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-muted)' }}>
+              {passwordModalTarget.username === user.username
+                ? 'Set a new password for the Super Admin account.'
+                : 'Set a temporary password for this admin account. They will be asked to change it after signing in.'}
+            </p>
+
+            {passwordFormError && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                backgroundColor: 'var(--danger-soft)',
+                border: '1px solid var(--danger)',
+                borderRadius: 'var(--radius-sm)',
+                padding: '10px 12px',
+                color: 'var(--danger)',
+                fontSize: '12px',
+                margin: 0
+              }}>
+                <AlertCircle size={16} style={{ flexShrink: 0 }} />
+                <span>{passwordFormError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleChangeAdminPassword} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div className="input-with-icon" style={{ position: 'relative' }}>
+                <label>New Password</label>
+                <input
+                  type={showResetPassword ? 'text' : 'password'}
+                  placeholder="Enter new password"
+                  value={resetPassword}
+                  onChange={(e) => setResetPassword(e.target.value)}
+                  disabled={isUpdatingPassword}
+                  style={{ paddingRight: '40px' }}
+                />
+                <Lock size={14} />
+                <button
+                  type="button"
+                  onClick={() => setShowResetPassword((prev) => !prev)}
+                  style={{
+                    position: 'absolute',
+                    right: '4px',
+                    bottom: '0px',
+                    height: '38px',
+                    width: '34px',
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--text-muted)',
+                    cursor: 'pointer',
+                    padding: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 10
+                  }}
+                  disabled={isUpdatingPassword}
+                >
+                  {showResetPassword ? (
+                    <EyeOff size={16} style={{ position: 'static', transform: 'none', pointerEvents: 'auto', left: 'auto', color: 'inherit' }} />
+                  ) : (
+                    <Eye size={16} style={{ position: 'static', transform: 'none', pointerEvents: 'auto', left: 'auto', color: 'inherit' }} />
+                  )}
+                </button>
+              </div>
+
+              <div className="input-with-icon" style={{ position: 'relative' }}>
+                <label>Confirm Password</label>
+                <input
+                  type={showResetConfirmPassword ? 'text' : 'password'}
+                  placeholder="Confirm new password"
+                  value={resetConfirmPassword}
+                  onChange={(e) => setResetConfirmPassword(e.target.value)}
+                  disabled={isUpdatingPassword}
+                  style={{ paddingRight: '40px' }}
+                />
+                <Lock size={14} />
+                <button
+                  type="button"
+                  onClick={() => setShowResetConfirmPassword((prev) => !prev)}
+                  style={{
+                    position: 'absolute',
+                    right: '4px',
+                    bottom: '0px',
+                    height: '38px',
+                    width: '34px',
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--text-muted)',
+                    cursor: 'pointer',
+                    padding: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 10
+                  }}
+                  disabled={isUpdatingPassword}
+                >
+                  {showResetConfirmPassword ? (
+                    <EyeOff size={16} style={{ position: 'static', transform: 'none', pointerEvents: 'auto', left: 'auto', color: 'inherit' }} />
+                  ) : (
+                    <Eye size={16} style={{ position: 'static', transform: 'none', pointerEvents: 'auto', left: 'auto', color: 'inherit' }} />
+                  )}
+                </button>
+              </div>
+
+              <div className="dialog-actions">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={resetPasswordModalState}
+                  disabled={isUpdatingPassword}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={isUpdatingPassword}
+                  style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                >
+                  {isUpdatingPassword ? (
+                    <>
+                      <RefreshCw size={14} className="animate-spin" />
+                      <span>Updating...</span>
+                    </>
+                  ) : (
+                    <span>Update Password</span>
                   )}
                 </button>
               </div>

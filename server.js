@@ -707,6 +707,65 @@ app.post('/api/auth/change-password', async (request, response) => {
   }
 });
 
+app.post('/api/auth/admins/change-password/:adminUsername', async (request, response) => {
+  try {
+    const { adminUsername } = request.params;
+    const { username, token, newPassword } = request.body || {};
+
+    if (!username || !token || !adminUsername || !newPassword) {
+      response.status(400).json({ message: 'All fields are required' });
+      return;
+    }
+
+    if (String(newPassword).trim().length < 6) {
+      response.status(400).json({ message: 'Password must be at least 6 characters long' });
+      return;
+    }
+
+    const usersCollection = getUsersCollection();
+    const requester = await usersCollection.findOne({ username: username.trim(), sessionToken: token });
+    if (!requester || requester.role !== 'Super Admin') {
+      response.status(403).json({ message: 'Unauthorized' });
+      return;
+    }
+
+    const targetUser = await usersCollection.findOne({ username: adminUsername.trim() });
+    if (!targetUser) {
+      response.status(404).json({ message: 'Administrator account not found' });
+      return;
+    }
+
+    if (targetUser.role === 'Super Admin' && targetUser.username !== requester.username) {
+      response.status(400).json({ message: 'You can only update your own Super Admin password' });
+      return;
+    }
+
+    const newSalt = generateSalt();
+    const newPasswordHash = hashPassword(newPassword.trim(), newSalt);
+    const isSelfUpdate = targetUser.username === requester.username;
+
+    await usersCollection.updateOne(
+      { _id: targetUser._id },
+      {
+        $set: {
+          passwordHash: newPasswordHash,
+          salt: newSalt,
+          mustChangePassword: isSelfUpdate ? false : true,
+          updatedAt: new Date()
+        }
+      }
+    );
+
+    response.json({
+      message: isSelfUpdate
+        ? 'Super Admin password updated successfully'
+        : 'Admin password updated successfully. The admin must change it after next login.'
+    });
+  } catch (error) {
+    response.status(500).json({ message: error.message });
+  }
+});
+
 app.post('/api/auth/create-admin', async (request, response) => {
   try {
     const { username, sessionToken, adminUsername, adminPassword, adminName } = request.body || {};
